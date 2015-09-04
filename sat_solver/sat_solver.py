@@ -14,12 +14,12 @@ class SatSolver:
         self.num_clauses = int()
         self.cnf = list()
         self.rand_seed = int()
-        self.num_runs = int()
-        self.fit_evals = int()
 
         self.read_config()
         random.seed(self.rand_seed)
         self.read_cnf()
+
+        self.log_file = open(self.config_params['log'], 'w+')
 
     def read_config(self):
         with open(self.config_file) as data_file:
@@ -56,37 +56,53 @@ class SatSolver:
         return perm
 
     def run_experiment(self):
+        self.init_log()
         for i in range(self.config_params['runs']):
+            self.log_file.write('Run ' + str(i+1) + '\n')
             start_time = time.time()
             self.run_fitness_evals()
             end_time = time.time()
-            print end_time - start_time
+            elapsed_time = end_time - start_time
 
     def run_fitness_evals(self):
         best_fit = 0
         for i in range(self.config_params['fit_evals']):
             p = self.generate_perm()
             fit = self.fitness_eval(p)
+
             if fit > best_fit:
                 best_fit = fit
+                self.log_file.write(str(i+1) + '\t' +str(fit) + '\n')
+
             if fit == self.num_clauses:
                 break
+
+        self.log_file.write('\n')
 
     def fitness_eval(self, perm):
         fitness = 0
         for i in self.cnf:
             current_clause = False
+            # print i
+            # print perm
             for j in i:
                 sign = int(j)
                 var = abs(sign)
                 if sign < 0:
-                    current_clause = current_clause or not perm[var-1]
+                    current_clause = current_clause or (not perm[var-1])
                 else:
                     current_clause = current_clause or perm[var-1]
             if current_clause:
                 fitness += 1
 
         return fitness
+
+    def init_log(self):
+        self.log_file.write('CNF filename: ' + str(self.config_params['cnf_file']) + '\n')
+        self.log_file.write('Random number seed value: ' + str(self.rand_seed) + '\n')
+        self.log_file.write('Number of runs: ' + str(self.config_params['runs']) + '\n')
+        self.log_file.write('Number of fitness evaluations per run: ' + str(self.config_params['fit_evals']) + '\n')
+        self.log_file.write('\n' + 'Result Log' + '\n\n')
 
 
 def main():
