@@ -5,13 +5,13 @@ import json
 import random
 import time
 import sys
-import matplotlib as plt
+import matplotlib.pyplot as plt
 
 
 class SatSolver:
     def __init__(self, args):
         if len(args) > 1:
-            self.config_file = str(args[0])
+            self.config_file = str(args[1])
         else:
             self.config_file = 'config/default.cfg'
 
@@ -66,22 +66,38 @@ class SatSolver:
         best_run = 10000
         best_perm = list()
         best_fit = 0
+        best_fit_vals = list()
+        best_fit_vals_iter = list()
+
         for i in range(self.config_params['runs']):
             self.log_file.write('Run ' + str(i+1) + '\n')
             start_time = time.time()
-            perm, run, fit = self.run_fitness_evals()
+            perm, run, fit, fit_vals, fit_vals_iter = self.run_fitness_evals()
             if run < best_run:
                 best_perm = perm
                 best_run = run
                 best_fit = fit
+                best_fit_vals = fit_vals
+                best_fit_vals_iter = fit_vals_iter
+
             end_time = time.time()
             elapsed_time = end_time - start_time
 
         self.write_sol(best_fit, best_perm)
 
+        # Create plot to show fitness progression
+        plt.step(best_fit_vals_iter, best_fit_vals, where='post')
+        plt.axis([1, max(best_fit_vals_iter) + .1*max(best_fit_vals_iter), 0, self.num_clauses + .1*self.num_clauses])
+        plt.ylabel('Fitness')
+        plt.xlabel('Run')
+        plt.title('Fitness graph for ' + self.config_params['cnf_file'])
+        plt.savefig(self.config_params['graph'])
+
     def run_fitness_evals(self):
         best_fit = 0
         perm = list()
+        fit_vals = list()
+        fit_vals_iter = list()
         num_fit_evals = self.config_params['fit_evals']
         for i in range(self.config_params['fit_evals']):
             perm = self.generate_perm()
@@ -90,13 +106,15 @@ class SatSolver:
             if fit > best_fit:
                 best_fit = fit
                 self.log_file.write(str(i+1) + '\t' +str(fit) + '\n')
+                fit_vals.append(best_fit)
+                fit_vals_iter.append(i+1)
 
             if fit == self.num_clauses:
                 num_fit_evals = i
                 break
 
         self.log_file.write('\n')
-        return perm, num_fit_evals, best_fit
+        return perm, num_fit_evals, best_fit, fit_vals, fit_vals_iter
 
     def fitness_eval(self, perm):
         fitness = 0
