@@ -4,11 +4,17 @@ __email__ = 'mia2n4@mst.edu'
 import json
 import random
 import time
+import sys
+import matplotlib as plt
 
 
 class SatSolver:
-    def __init__(self):
-        self.config_file = 'config/default.cfg'
+    def __init__(self, args):
+        if len(args) > 1:
+            self.config_file = str(args[0])
+        else:
+            self.config_file = 'config/default.cfg'
+
         self.config_params = {}
         self.num_vars = int()
         self.num_clauses = int()
@@ -128,7 +134,7 @@ class SatSolver:
 
 
 def main():
-    s = SatSolver()
+    s = SatSolver(sys.argv)
     s.run_experiment()
 
 if __name__ == "__main__":
