@@ -57,34 +57,45 @@ class SatSolver:
 
     def run_experiment(self):
         self.init_log()
+        best_run = 10000
+        best_perm = list()
+        best_fit = 0
         for i in range(self.config_params['runs']):
             self.log_file.write('Run ' + str(i+1) + '\n')
             start_time = time.time()
-            self.run_fitness_evals()
+            perm, run, fit = self.run_fitness_evals()
+            if run < best_run:
+                best_perm = perm
+                best_run = run
+                best_fit = fit
             end_time = time.time()
             elapsed_time = end_time - start_time
 
+        self.write_sol(best_fit, best_perm)
+
     def run_fitness_evals(self):
         best_fit = 0
+        perm = list()
+        num_fit_evals = self.config_params['fit_evals']
         for i in range(self.config_params['fit_evals']):
-            p = self.generate_perm()
-            fit = self.fitness_eval(p)
+            perm = self.generate_perm()
+            fit = self.fitness_eval(perm)
 
             if fit > best_fit:
                 best_fit = fit
                 self.log_file.write(str(i+1) + '\t' +str(fit) + '\n')
 
             if fit == self.num_clauses:
+                num_fit_evals = i
                 break
 
         self.log_file.write('\n')
+        return perm, num_fit_evals, best_fit
 
     def fitness_eval(self, perm):
         fitness = 0
         for i in self.cnf:
             current_clause = False
-            # print i
-            # print perm
             for j in i:
                 sign = int(j)
                 var = abs(sign)
@@ -103,6 +114,17 @@ class SatSolver:
         self.log_file.write('Number of runs: ' + str(self.config_params['runs']) + '\n')
         self.log_file.write('Number of fitness evaluations per run: ' + str(self.config_params['fit_evals']) + '\n')
         self.log_file.write('\n' + 'Result Log' + '\n\n')
+
+    def write_sol(self, val, perm):
+        sol_file = open(self.config_params['solution'], 'w+')
+        sol_file.write('c Solution for: ' + self.config_params['cnf_file'] + '\n')
+        sol_file.write('c MAXSAT fitness value: ' + str(val) + '\n')
+        sol_file.write('v ')
+        for i in range(len(perm)):
+            if perm[i]:
+                sol_file.write(str(i+1) + ' ')
+            else:
+                sol_file.write(str(-(i+1)) + ' ')
 
 
 def main():
