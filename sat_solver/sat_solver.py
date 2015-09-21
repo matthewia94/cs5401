@@ -6,6 +6,8 @@ import random
 import time
 import sys
 import matplotlib.pyplot as plt
+import numpy
+import math
 
 
 class SatSolver:
@@ -70,15 +72,14 @@ class SatSolver:
         perm = range(self.num_vars)
 
         for i in perm:
-            perm[i] = bool(random.randint(0, 1))
+            perm[i] = random.randint(0, 1)
 
         return perm
 
     # Run the entire experiment where each run is multiple fitness evaluations
     def run_experiment(self):
         self.init_log()
-        best_run = 10000
-        best_perm = list()
+        best_sol = list()
         best_fit = 0
         best_fit_vals = list()
         best_fit_vals_iter = list()
@@ -87,32 +88,30 @@ class SatSolver:
         for i in range(self.config_params['runs']):
             self.log_file.write('Run ' + str(i+1) + '\n')
             start_time = time.time()
-            perm, run, fit, fit_vals, fit_vals_iter = self.run_fitness_evals()
-            # Log information about the current best run
-            if run < best_run:
-                best_perm = perm
-                best_run = run
-                best_fit = fit
-                best_fit_vals = fit_vals
-                best_fit_vals_iter = fit_vals_iter
+
+            log, sol, fits = self.run_evolution()
+
+            # Write run to log file
+            self.write_log(log)
 
             # Calculate time taken
             end_time = time.time()
             elapsed_time = end_time - start_time
 
-        # Log the best solution in a file
-        self.write_sol(best_fit, best_perm)
+            if self.fitness_eval(sol) > best_fit:
+                best_sol = sol
+                best_fit = self.fitness_eval(sol)
+                best_fit_vals = fits
 
-        # Ensure that graph goes to total number of fitness evals
-        if max(best_fit_vals_iter) < self.config_params['fit_evals']:
-            best_fit_vals_iter.append(self.config_params['fit_evals'])
-            best_fit_vals.append(self.num_clauses)
+        # Log the best solution in a file
+        self.write_sol(self.fitness_eval(best_sol), best_sol)
 
         # Create plot to show fitness progression
-        plt.step(best_fit_vals_iter, best_fit_vals, where='post')
-        plt.axis([1, max(best_fit_vals_iter), 0, self.num_clauses])
+        plt.boxplot(best_fit_vals)
+        plt.ylim([0, self.num_clauses + int(.1*self.num_clauses)])
+        plt.tick_params(axis='x', which='major', labelsize=6)
         plt.ylabel('Fitness')
-        plt.xlabel('Evaluation')
+        plt.xlabel('Generation')
         plt.title('Fitness graph for ' + self.config_params['cnf_file'])
         plt.savefig(self.config_params['graph'])
 
@@ -149,9 +148,9 @@ class SatSolver:
                 sign = int(j)
                 var = abs(sign)
                 if sign < 0:
-                    current_clause = current_clause or (not perm[var-1])
+                    current_clause = current_clause or (not bool(perm[var-1]))
                 else:
-                    current_clause = current_clause or perm[var-1]
+                    current_clause = current_clause or bool(perm[var-1])
             if current_clause:
                 fitness += 1
 
@@ -163,6 +162,18 @@ class SatSolver:
         self.log_file.write('Random number seed value: ' + str(self.rand_seed) + '\n')
         self.log_file.write('Number of runs: ' + str(self.config_params['runs']) + '\n')
         self.log_file.write('Number of fitness evaluations per run: ' + str(self.config_params['fit_evals']) + '\n')
+        self.log_file.write('Log filename: ' + self.config_params['log'] + '\n')
+        self.log_file.write('Solution filename: ' + self.config_params['solution'] + '\n')
+        self.log_file.write('Population size: ' + str(self.config_params['population_size']) + '\n')
+        self.log_file.write('Offspring size: ' + str(self.config_params['offspring']) + '\n')
+        self.log_file.write('Fitness static limit: ' + str(self.config_params['term_n']) + '\n')
+        self.log_file.write('Parent selection: ' + self.config_params['parent_sel'] + '\n')
+        self.log_file.write('Survival selection: ' + self.config_params['survival_sel'] + '\n')
+        self.log_file.write('k-tournament size (parent): ' + str(self.config_params['tourn_size_parent']) + '\n')
+        self.log_file.write('k-tournament size (survival): ' + str(self.config_params['tourn_size_child']) + '\n')
+        self.log_file.write('Terminate on fitness evals: ' + str(self.config_params['termination_evals']) + '\n')
+        self.log_file.write('Terminate on avg population fitness: ' + str(self.config_params['term_avg_fitness']) + '\n')
+        self.log_file.write('Terminate on best population fitness: ' + str(self.config_params['term_best_fitness']) + '\n')
         self.log_file.write('\n' + 'Result Log' + '\n\n')
 
     # Write the solution file
@@ -176,6 +187,164 @@ class SatSolver:
                 sol_file.write(str(i+1) + ' ')
             else:
                 sol_file.write(str(-(i+1)) + ' ')
+
+    # Write a run to the log file
+    def write_log(self, log):
+        for i in log:
+            self.log_file.write(str(i[0]) + '\t' + str(i[1]) + '\t' + str(i[2]) + '\n')
+        self.log_file.write('\n')
+
+    # Population initialization which is uniform random
+    def pop_initialization(self):
+        population = list()
+        for i in range(self.config_params['population_size']):
+            temp_perm = self.generate_perm()
+            population.append((temp_perm, self.fitness_eval(temp_perm)))
+
+        return population
+
+    # Parent selection function
+    def fps_parent_selection(self, population):
+        mating_pool = list()
+
+        # Get the lists of fitnesses and permutations to make calculations easy
+        perm, fit = map(list, zip(*population))
+
+        # Probability distribution of becoming a parent
+        prob_parent = [x / float(sum(fit)) for x in fit]
+
+        num_parents = self.config_params['population_size']
+
+        # Randomly pick parents using the generated probability distribution
+        parents_index = numpy.random.choice(a=range(num_parents), size=num_parents, p=prob_parent, replace=True)
+        parents_index = parents_index.tolist()
+
+        for i in parents_index:
+            mating_pool.append(population[i])
+
+        return mating_pool
+
+    def k_tournament_parent_selection(self, population):
+        mating_pool = list()
+
+        current_member = 0
+        while current_member < len(population):
+            tournament = list()
+            # Pick tourn_size_parents randomly
+            for i in range(0, self.config_params['tourn_size_parent']-1):
+                r = random.randint(0, len(population)-1)
+                tournament.append(population[r])
+
+            perm, fit = map(list, zip(*tournament))
+
+            i = fit.index(max(fit))
+
+            mating_pool.append(tournament[i])
+            current_member += 1
+
+        return mating_pool
+
+    # Generate the children given parents and population, uses 2 point crossover
+    def children_generation(self, mating_pool):
+        children = list()
+
+        n = random.randint(1, self.num_vars-1)
+
+        for i in range(0, self.config_params['offspring'], 1):
+            child = list()
+
+            for j in range(0, self.num_vars+1, self.num_vars/n):
+                child += mating_pool[i][max((j-self.num_vars/n, 0)):j]
+
+            if self.num_vars > len(child):
+                child += mating_pool[i][self.num_vars-(self.num_vars % n):]
+
+            children.append((child[0], self.fitness_eval(child[0])))
+
+        return children
+
+    # Choose survivors using truncation based on fitness
+    def truncation_survivor_selection(self, population):
+        population.sort(key=lambda x: x[1], reverse=True)
+        population = population[:self.config_params['population_size']]
+        return population
+
+    def k_tournament_survivor_selection(self, population):
+        new_pop = list()
+
+        current_member = 0
+        while current_member < self.config_params['population_size']:
+            tournament = list()
+            # Pick tourn_size_parents randomly
+            for i in range(0, self.config_params['tourn_size_child']-1):
+                r = random.randint(0, len(population)-1)
+                tournament.append(population[r])
+
+            perm, fit = map(list, zip(*tournament))
+
+            i = fit.index(max(fit))
+
+            new_pop.append(tournament[i])
+            population.remove(tournament[i])
+            current_member += 1
+
+        return new_pop
+
+    def run_evolution(self):
+        log = list()
+        fits = list()
+
+        pop = self.pop_initialization()
+        fitness_count = self.config_params['population_size']
+        best_unchanged = 0
+        avg_unchanged = 0
+
+        perm, fit = map(list, zip(*pop))
+        best_fit = max(fit)
+        avg_fit = sum(fit)/len(fit)
+        best = perm[fit.index(best_fit)]
+        term_n = self.config_params['term_n']
+
+        log.append((fitness_count, avg_fit, best_fit))
+
+        while fitness_count < self.config_params['fit_evals'] and best_unchanged < term_n and avg_unchanged < term_n:
+            if self.config_params['parent_sel'] == 'k-tournament':
+                par = self.k_tournament_parent_selection(pop)
+            else:
+                par = self.fps_parent_selection(pop)
+
+            children = self.children_generation(par)
+            pop = par + children
+
+            if self.config_params['survival_sel'] == 'k-tournament':
+                pop = self.k_tournament_survivor_selection(pop)
+            else:
+                pop = self.truncation_survivor_selection(pop)
+
+            fitness_count += self.config_params['offspring']
+
+            perm, fit = map(list, zip(*pop))
+            cur_best_fit = max(fit)
+            cur_avg_fit = sum(fit)/len(fit)
+
+            # Update termination conditions
+            if cur_best_fit > best_fit:
+                best_fit = cur_best_fit
+                best_unchanged = 0
+                best = perm[fit.index(best_fit)]
+            elif self.config_params['term_best_fitness']:
+                best_unchanged += 1
+
+            if cur_avg_fit > avg_fit:
+                avg_fit = cur_avg_fit
+                avg_unchanged = 0
+            elif self.config_params['term_avg_fitness']:
+                avg_unchanged += 1
+
+            fits.append(fit)
+            log.append((fitness_count, avg_fit, best_fit))
+
+        return log, best, fits
 
 
 def main():

@@ -8,3 +8,5 @@ If you wish to change the config file used simply add an argument when running t
     python sat_solver <path to config>
     
 The config file should use a json format.
+parent_sel can have the values "k-tournament" or "fps"
+survival_sel can have the values "k-tournament" or "truncation"
