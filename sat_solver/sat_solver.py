@@ -7,7 +7,28 @@ import time
 import sys
 import matplotlib.pyplot as plt
 import numpy
+from operator import attrgetter
 import math
+
+
+class SatPerm:
+    def __init__(self, perm, fit):
+        self.perm = perm
+        self.fit = fit
+
+    def __add__(self, other):
+        return self.fit + other
+
+    def __radd__(self, other):
+        return self.fit + other
+
+    def __cmp__(self, other):
+        if self.fit == other:
+            return 0
+        elif self.fit < other:
+            return -1
+        else:
+            return 1
 
 
 class SatSolver:
@@ -82,7 +103,6 @@ class SatSolver:
         best_sol = list()
         best_fit = 0
         best_fit_vals = list()
-        best_fit_vals_iter = list()
 
         # Multiple runs
         for i in range(self.config_params['runs']):
@@ -199,7 +219,7 @@ class SatSolver:
         population = list()
         for i in range(self.config_params['population_size']):
             temp_perm = self.generate_perm()
-            population.append((temp_perm, self.fitness_eval(temp_perm)))
+            population.append(SatPerm(temp_perm, self.fitness_eval(temp_perm)))
 
         return population
 
@@ -207,16 +227,14 @@ class SatSolver:
     def fps_parent_selection(self, population):
         mating_pool = list()
 
-        # Get the lists of fitnesses and permutations to make calculations easy
-        perm, fit = map(list, zip(*population))
-
         # Probability distribution of becoming a parent
-        prob_parent = [x / float(sum(fit)) for x in fit]
+        tot_fit = sum(population)
+        prob_parent = [x.fit / float(tot_fit) for x in population]
 
         num_parents = self.config_params['population_size']
 
         # Randomly pick parents using the generated probability distribution
-        parents_index = numpy.random.choice(a=range(num_parents), size=num_parents, p=prob_parent, replace=True)
+        parents_index = numpy.random.choice(a=range(num_parents), size=num_parents, p=prob_parent, replace=False)
         parents_index = parents_index.tolist()
 
         for i in parents_index:
@@ -235,37 +253,39 @@ class SatSolver:
                 r = random.randint(0, len(population)-1)
                 tournament.append(population[r])
 
-            perm, fit = map(list, zip(*tournament))
-
-            i = fit.index(max(fit))
-
-            mating_pool.append(tournament[i])
+            mating_pool.append(max(tournament))
             current_member += 1
 
         return mating_pool
 
-    # Generate the children given parents and population, uses 2 point crossover
+    # Generate the children given parents and population, uses n point crossover
     def children_generation(self, mating_pool):
         children = list()
 
         n = random.randint(1, self.num_vars-1)
 
-        for i in range(0, self.config_params['offspring'], 1):
-            child = list()
+        for i in range(0, self.config_params['offspring'], 2):
+            child = []
 
+            parent = 0
             for j in range(0, self.num_vars+1, self.num_vars/n):
-                child += mating_pool[i][max((j-self.num_vars/n, 0)):j]
+                if parent == 0:
+                    child.extend(mating_pool[i].perm[max((j-self.num_vars/n, 0)):j])
+                    parent = 1
+                else:
+                    child.extend(mating_pool[i+1].perm[max((j-self.num_vars/n, 0)):j])
+                    parent = 0
 
             if self.num_vars > len(child):
-                child += mating_pool[i][self.num_vars-(self.num_vars % n):]
+                child.extend(mating_pool[i].perm[self.num_vars-(self.num_vars % n):])
 
-            children.append((child[0], self.fitness_eval(child[0])))
+            children.append(SatPerm(child, self.fitness_eval(child)))
 
         return children
 
     # Choose survivors using truncation based on fitness
     def truncation_survivor_selection(self, population):
-        population.sort(key=lambda x: x[1], reverse=True)
+        population.sort(key=lambda x: x.fit, reverse=True)
         population = population[:self.config_params['population_size']]
         return population
 
@@ -280,12 +300,10 @@ class SatSolver:
                 r = random.randint(0, len(population)-1)
                 tournament.append(population[r])
 
-            perm, fit = map(list, zip(*tournament))
+            loser = max(tournament, key=getattr('fit'))
 
-            i = fit.index(max(fit))
-
-            new_pop.append(tournament[i])
-            population.remove(tournament[i])
+            new_pop.append(loser)
+            population.remove(loser)
             current_member += 1
 
         return new_pop
@@ -299,10 +317,9 @@ class SatSolver:
         best_unchanged = 0
         avg_unchanged = 0
 
-        perm, fit = map(list, zip(*pop))
-        best_fit = max(fit)
-        avg_fit = sum(fit)/len(fit)
-        best = perm[fit.index(best_fit)]
+        best_fit = max(pop, key=attrgetter('fit')).fit
+        avg_fit = sum(pop)/len(pop)
+        best = pop[[i.fit for i in pop].index(best_fit)].perm
         term_n = self.config_params['term_n']
 
         log.append((fitness_count, avg_fit, best_fit))
@@ -323,15 +340,14 @@ class SatSolver:
 
             fitness_count += self.config_params['offspring']
 
-            perm, fit = map(list, zip(*pop))
-            cur_best_fit = max(fit)
-            cur_avg_fit = sum(fit)/len(fit)
+            cur_best_fit = max(pop)
+            cur_avg_fit = sum(pop)/len(pop)
 
             # Update termination conditions
             if cur_best_fit > best_fit:
                 best_fit = cur_best_fit
                 best_unchanged = 0
-                best = perm[fit.index(best_fit)]
+                best = pop[[i.fit for i in pop].index(best_fit)].perm
             elif self.config_params['term_best_fitness']:
                 best_unchanged += 1
 
@@ -341,7 +357,7 @@ class SatSolver:
             elif self.config_params['term_avg_fitness']:
                 avg_unchanged += 1
 
-            fits.append(fit)
+            fits.append([i.fit for i in pop])
             log.append((fitness_count, avg_fit, best_fit))
 
         return log, best, fits
