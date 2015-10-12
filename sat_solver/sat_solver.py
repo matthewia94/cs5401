@@ -12,9 +12,10 @@ import math
 
 
 class SatPerm:
-    def __init__(self, perm, fit):
+    def __init__(self, perm, fit, mutation):
         self.perm = perm
         self.fit = fit
+        self.mutation = mutation
 
     def __add__(self, other):
         return self.fit + other
@@ -217,13 +218,14 @@ class SatSolver:
     # Population initialization which is uniform random
     def pop_initialization(self):
         population = list()
-        for i in range(self.config_params['population_size']):
+        population.extend(self.seed())
+        for i in range(self.config_params['population_size'] - len(population)):
             temp_perm = self.generate_perm()
-            population.append(SatPerm(temp_perm, self.fitness_eval(temp_perm)))
+            population.append(SatPerm(temp_perm, self.fitness_eval(temp_perm), self.config_params['mutation']))
 
         return population
 
-    # Parent selection function
+    # Parent selection functions
     def fps_parent_selection(self, population):
         mating_pool = list()
 
@@ -231,7 +233,7 @@ class SatSolver:
         tot_fit = sum(population)
         prob_parent = [x.fit / float(tot_fit) for x in population]
 
-        num_parents = self.config_params['population_size']
+        num_parents = self.config_params['offspring'] + 1
 
         # Randomly pick parents using the generated probability distribution
         parents_index = numpy.random.choice(a=range(num_parents), size=num_parents, p=prob_parent, replace=False)
@@ -246,7 +248,7 @@ class SatSolver:
         mating_pool = list()
 
         current_member = 0
-        while current_member < len(population):
+        while current_member < self.config_params['offspring'] + 1:
             tournament = list()
             # Pick tourn_size_parents randomly
             for i in range(0, self.config_params['tourn_size_parent']-1):
@@ -258,15 +260,24 @@ class SatSolver:
 
         return mating_pool
 
+    def uniform_rand_parent_selection(self, population):
+        mating_pool = list()
+
+        for i in range(self.config_params['offspring'] + 1):
+            mating_pool.append(population[random.randint(0, len(population))])
+
+        return mating_pool
+
     # Generate the children given parents and population, uses n point crossover
     def children_generation(self, mating_pool):
         children = list()
 
         n = random.randint(1, self.num_vars-1)
 
-        for i in range(0, self.config_params['offspring'], 2):
+        for i in range(0, self.config_params['offspring'], 1):
             child = []
 
+            # Recombination to create offspring
             parent = 0
             for j in range(0, self.num_vars+1, self.num_vars/n):
                 if parent == 0:
@@ -279,9 +290,34 @@ class SatSolver:
             if self.num_vars > len(child):
                 child.extend(mating_pool[i].perm[self.num_vars-(self.num_vars % n):])
 
-            children.append(SatPerm(child, self.fitness_eval(child)))
+            # Run self-adaption if it is turned on
+            if self.config_params['self-adaption']:
+                mutate_rate = self.recombine_param(mating_pool[i].mutation, mating_pool[i+1].mutation)
+                mutate_rate = self.mutate_param(mutate_rate)
+            else:
+                mutate_rate = mating_pool[i].mutation
+
+            # Mutation of the offspring
+            child = self.mutate_perm(child, mutate_rate)
+
+            children.append(SatPerm(child, self.fitness_eval(child), mutate_rate))
 
         return children
+
+    def mutate_perm(self, perm, rate):
+        for j in range(len(perm)):
+            val = random.randint(0, 100)
+            if val < 100*rate:
+                perm[j] = ~perm[j]
+        return perm
+
+    # Average parameters together
+    def recombine_param(self, param1, param2):
+        return (param1 + param2) / 2.0
+
+    # Modify the parameter
+    def mutate_param(self, param1):
+        return param1 + (random.uniform(-param1, param1) / 100.0)
 
     # Choose survivors using truncation based on fitness
     def truncation_survivor_selection(self, population):
@@ -308,6 +344,60 @@ class SatSolver:
 
         return new_pop
 
+    def uniform_rand_survivor_selection(self, population):
+        new_pop = list()
+
+        for i in range(self.config_params['offspring']):
+            new_pop.append(population[random.randint(0, len(population))])
+
+        return new_pop
+
+    def fps_survivor_selection(self, population):
+        new_pop = list()
+
+        # Probability distribution of becoming a parent
+        tot_fit = sum(population)
+        prob_pop = [x.fit / float(tot_fit) for x in population]
+
+        num_pop = self.config_params['population_size']
+
+        # Randomly pick parents using the generated probability distribution
+        pop_index = numpy.random.choice(a=range(num_pop), size=num_pop, p=prob_pop, replace=False)
+        pop_index = pop_index.tolist()
+
+        for i in pop_index:
+            new_pop.append(population[i])
+
+        return new_pop
+
+    def restart(self, population):
+        new_pop = list()
+
+        population.sort(key=lambda x: x.fit, reverse=True)
+        new_pop.extend(population[:self.config_params['r']])
+
+        for i in range(self.config_params['population_size'] - self.config_params['r']):
+            entity = self.generate_perm()
+            new_pop.append(SatPerm(entity, self.fitness_eval(entity), self.config_params['mutation']))
+
+        return new_pop
+
+    def seed(self):
+        seeds = list()
+
+        with open(self.config_params['seed_file']) as f:
+            for line in f:
+                perm = list()
+                for i in line.split():
+                    if i > 0:
+                        perm.append(1)
+                    else:
+                        perm.append(0)
+
+                seeds.append(SatPerm(perm, self.fitness_eval(perm), self.config_params['mutation']))
+
+        return seeds
+
     def run_evolution(self):
         log = list()
         fits = list()
@@ -324,23 +414,37 @@ class SatSolver:
 
         log.append((fitness_count, avg_fit, best_fit))
 
-        while fitness_count < self.config_params['fit_evals'] and best_unchanged < term_n and avg_unchanged < term_n:
+        while fitness_count < self.config_params['fit_evals']:
+            if (best_unchanged >= term_n or avg_unchanged >= term_n) and self.config_params['r-elitism']:
+                pop = self.restart(pop)
+                fitness_count += self.config_params['population_size'] - self.config_params['r']
+
             if self.config_params['parent_sel'] == 'k-tournament':
                 par = self.k_tournament_parent_selection(pop)
-            else:
+            elif self.config_params['parent_sel'] == 'fps':
                 par = self.fps_parent_selection(pop)
+            else:
+                par = self.uniform_rand_parent_selection(pop)
 
             children = self.children_generation(par)
-            pop = par + children
+            if self.config_params['survival_strategy'] == ',':
+                pop = children
+            else:
+                pop = par + children
 
             if self.config_params['survival_sel'] == 'k-tournament':
                 pop = self.k_tournament_survivor_selection(pop)
-            else:
+            elif self.config_params['survival_sel'] == 'truncation':
                 pop = self.truncation_survivor_selection(pop)
+            elif self.config_params['survival_sel'] == 'uniform-random':
+                pop = self.uniform_rand_survivor_selection(pop)
+            else:
+                pop = self.fps_survival_selection(pop)
+
 
             fitness_count += self.config_params['offspring']
 
-            cur_best_fit = max(pop)
+            cur_best_fit = max(pop).fit
             cur_avg_fit = sum(pop)/len(pop)
 
             # Update termination conditions
