@@ -5,10 +5,9 @@ import json
 import random
 import time
 import sys
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import numpy
 from operator import attrgetter
-import math
 
 
 class SatPerm:
@@ -128,13 +127,13 @@ class SatSolver:
         self.write_sol(self.fitness_eval(best_sol), best_sol)
 
         # Create plot to show fitness progression
-        plt.boxplot(best_fit_vals)
-        plt.ylim([0, self.num_clauses + int(.1*self.num_clauses)])
-        plt.tick_params(axis='x', which='major', labelsize=6)
-        plt.ylabel('Fitness')
-        plt.xlabel('Generation')
-        plt.title('Fitness graph for ' + self.config_params['cnf_file'])
-        plt.savefig(self.config_params['graph'])
+        # plt.boxplot(best_fit_vals)
+        # plt.ylim([0, self.num_clauses + int(.1*self.num_clauses)])
+        # plt.tick_params(axis='x', which='major', labelsize=6)
+        # plt.ylabel('Fitness')
+        # plt.xlabel('Generation')
+        # plt.title('Fitness graph for ' + self.config_params['cnf_file'])
+        # plt.savefig(self.config_params['graph'])
 
     # Run the fitness evals for a given run
     def run_fitness_evals(self):
@@ -218,7 +217,8 @@ class SatSolver:
     # Population initialization which is uniform random
     def pop_initialization(self):
         population = list()
-        population.extend(self.seed())
+        if self.config_params['seeded']:
+            population.extend(self.seed())
         for i in range(self.config_params['population_size'] - len(population)):
             temp_perm = self.generate_perm()
             population.append(SatPerm(temp_perm, self.fitness_eval(temp_perm), self.config_params['mutation']))
@@ -317,7 +317,7 @@ class SatSolver:
 
     # Modify the parameter
     def mutate_param(self, param1):
-        return param1 + (random.uniform(-param1, param1) / 100.0)
+        return param1 + (random.gauss(0, 1) / 100.0)
 
     # Choose survivors using truncation based on fitness
     def truncation_survivor_selection(self, population):
