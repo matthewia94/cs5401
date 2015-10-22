@@ -52,6 +52,7 @@ class SatSolver:
 
         # Create a log file
         self.log_file = open(self.config_params['log'], 'w+')
+        self.log_file.close()
 
     # Parses the Json config file
     def read_config(self):
@@ -88,6 +89,8 @@ class SatSolver:
             if line.split()[0] != 'c':
                 self.cnf.append(line.split()[:-1])
 
+        f.close()
+
     # Create a random permutation of boolean values
     def generate_perm(self):
         perm = range(self.num_vars)
@@ -106,7 +109,9 @@ class SatSolver:
 
         # Multiple runs
         for i in range(self.config_params['runs']):
+            self.log_file = open(self.config_params['log'], 'a')
             self.log_file.write('Run ' + str(i+1) + '\n')
+            self.log_file.close()
             start_time = time.time()
 
             log, sol, fits = self.run_evolution()
@@ -142,6 +147,7 @@ class SatSolver:
         fit_vals = list()
         fit_vals_iter = list()
         num_fit_evals = self.config_params['fit_evals']
+        self.log_file = open(self.config_params['log'], 'a')
         for i in range(self.config_params['fit_evals']):
             perm = self.generate_perm()
             fit = self.fitness_eval(perm)
@@ -157,6 +163,7 @@ class SatSolver:
                 break
 
         self.log_file.write('\n')
+        self.log_file.close()
         return perm, num_fit_evals, best_fit, fit_vals, fit_vals_iter
 
     # Run a single fitness evaluation for a given permutation
@@ -178,6 +185,7 @@ class SatSolver:
 
     # Initialize the log file with meta data
     def init_log(self):
+        self.log_file = open(self.config_params['log'], 'a');
         self.log_file.write('CNF filename: ' + str(self.config_params['cnf_file']) + '\n')
         self.log_file.write('Random number seed value: ' + str(self.rand_seed) + '\n')
         self.log_file.write('Number of runs: ' + str(self.config_params['runs']) + '\n')
@@ -195,6 +203,7 @@ class SatSolver:
         self.log_file.write('Terminate on avg population fitness: ' + str(self.config_params['term_avg_fitness']) + '\n')
         self.log_file.write('Terminate on best population fitness: ' + str(self.config_params['term_best_fitness']) + '\n')
         self.log_file.write('\n' + 'Result Log' + '\n\n')
+        self.log_file.close()
 
     # Write the solution file
     def write_sol(self, val, perm):
@@ -207,12 +216,15 @@ class SatSolver:
                 sol_file.write(str(i+1) + ' ')
             else:
                 sol_file.write(str(-(i+1)) + ' ')
+        sol_file.close()
 
     # Write a run to the log file
     def write_log(self, log):
+        self.log_file = open(self.config_params['log'], 'a')
         for i in log:
             self.log_file.write(str(i[0]) + '\t' + str(i[1]) + '\t' + str(i[2]) + '\n')
         self.log_file.write('\n')
+        self.log_file.close()
 
     # Population initialization which is uniform random
     def pop_initialization(self):
@@ -251,7 +263,7 @@ class SatSolver:
         while current_member < self.config_params['offspring'] + 1:
             tournament = list()
             # Pick tourn_size_parents randomly
-            for i in range(0, self.config_params['tourn_size_parent']-1):
+            for i in range(0, self.config_params['tourn_size_parent']):
                 r = random.randint(0, len(population)-1)
                 tournament.append(population[r])
 
@@ -308,7 +320,7 @@ class SatSolver:
         for j in range(len(perm)):
             val = random.randint(0, 100)
             if val < 100*rate:
-                perm[j] = ~perm[j]
+                perm[j] = not perm[j]
         return perm
 
     # Average parameters together
@@ -332,7 +344,7 @@ class SatSolver:
         while current_member < self.config_params['population_size']:
             tournament = list()
             # Pick tourn_size_parents randomly
-            for i in range(0, self.config_params['tourn_size_child']-1):
+            for i in range(0, self.config_params['tourn_size_child']):
                 r = random.randint(0, len(population)-1)
                 tournament.append(population[r])
 
@@ -389,6 +401,7 @@ class SatSolver:
             for line in f:
                 perm = list()
                 for i in line.split():
+                    i = int(i)
                     if i > 0:
                         perm.append(1)
                     else:
@@ -430,7 +443,7 @@ class SatSolver:
             if self.config_params['survival_strategy'] == ',':
                 pop = children
             else:
-                pop = par + children
+                pop = pop + children
 
             if self.config_params['survival_sel'] == 'k-tournament':
                 pop = self.k_tournament_survivor_selection(pop)
