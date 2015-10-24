@@ -5,16 +5,17 @@ import json
 import random
 import time
 import sys
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 import numpy
 from operator import attrgetter
 
 
 class SatPerm:
-    def __init__(self, perm, fit, mutation):
+    def __init__(self, perm, fit, dc_fit, mutation):
         self.perm = perm
         self.fit = fit
         self.mutation = mutation
+        self.dc_fit = dc_fit
 
     def __add__(self, other):
         return self.fit + other
@@ -96,7 +97,8 @@ class SatSolver:
         perm = range(self.num_vars)
 
         for i in perm:
-            perm[i] = random.randint(0, 1)
+            # -1 is don't care, 0 is false, 1 is true
+            perm[i] = random.randint(-1, 1)
 
         return perm
 
@@ -132,39 +134,13 @@ class SatSolver:
         self.write_sol(self.fitness_eval(best_sol), best_sol)
 
         # Create plot to show fitness progression
-        # plt.boxplot(best_fit_vals)
-        # plt.ylim([0, self.num_clauses + int(.1*self.num_clauses)])
-        # plt.tick_params(axis='x', which='major', labelsize=6)
-        # plt.ylabel('Fitness')
-        # plt.xlabel('Generation')
-        # plt.title('Fitness graph for ' + self.config_params['cnf_file'])
-        # plt.savefig(self.config_params['graph'])
-
-    # Run the fitness evals for a given run
-    def run_fitness_evals(self):
-        best_fit = 0
-        perm = list()
-        fit_vals = list()
-        fit_vals_iter = list()
-        num_fit_evals = self.config_params['fit_evals']
-        self.log_file = open(self.config_params['log'], 'a')
-        for i in range(self.config_params['fit_evals']):
-            perm = self.generate_perm()
-            fit = self.fitness_eval(perm)
-
-            if fit > best_fit:
-                best_fit = fit
-                self.log_file.write(str(i+1) + '\t' +str(fit) + '\n')
-                fit_vals.append(best_fit)
-                fit_vals_iter.append(i+1)
-
-            if fit == self.num_clauses:
-                num_fit_evals = i
-                break
-
-        self.log_file.write('\n')
-        self.log_file.close()
-        return perm, num_fit_evals, best_fit, fit_vals, fit_vals_iter
+        plt.boxplot(best_fit_vals)
+        plt.ylim([0, self.num_clauses + int(.1*self.num_clauses)])
+        plt.tick_params(axis='x', which='major', labelsize=6)
+        plt.ylabel('Fitness')
+        plt.xlabel('Generation')
+        plt.title('Fitness graph for ' + self.config_params['cnf_file'])
+        plt.savefig(self.config_params['graph'])
 
     # Run a single fitness evaluation for a given permutation
     def fitness_eval(self, perm):
@@ -174,14 +150,30 @@ class SatSolver:
             for j in i:
                 sign = int(j)
                 var = abs(sign)
-                if sign < 0:
-                    current_clause = current_clause or (not bool(perm[var-1]))
+
+                # If there is a don't care variable evaluate the line as false
+                if perm[var-1] == -1:
+                    current_clause = False
+                    break
                 else:
-                    current_clause = current_clause or bool(perm[var-1])
+                    if sign < 0:
+                        current_clause = current_clause or (not bool(perm[var-1]))
+                    else:
+                        current_clause = current_clause or bool(perm[var-1])
             if current_clause:
                 fitness += 1
 
         return fitness
+
+    # The fitness based on the number of don't cares
+    def dc_fitness(self, perm):
+        dc = 0
+
+        for i in perm:
+            if i == -1:
+                dc += 1
+
+        return dc
 
     # Initialize the log file with meta data
     def init_log(self):
@@ -233,7 +225,8 @@ class SatSolver:
             population.extend(self.seed())
         for i in range(self.config_params['population_size'] - len(population)):
             temp_perm = self.generate_perm()
-            population.append(SatPerm(temp_perm, self.fitness_eval(temp_perm), self.config_params['mutation']))
+            population.append(SatPerm(temp_perm, self.fitness_eval(temp_perm), self.dc_fitness(temp_perm),
+                                      self.config_params['mutation']))
 
         return population
 
@@ -312,7 +305,7 @@ class SatSolver:
             # Mutation of the offspring
             child = self.mutate_perm(child, mutate_rate)
 
-            children.append(SatPerm(child, self.fitness_eval(child), mutate_rate))
+            children.append(SatPerm(child, self.fitness_eval(child), self.dc_fitness(child), mutate_rate))
 
         return children
 
@@ -320,7 +313,16 @@ class SatSolver:
         for j in range(len(perm)):
             val = random.randint(0, 100)
             if val < 100*rate:
-                perm[j] = not perm[j]
+                # If mutation should happen pick between the other two options randomly
+                if perm[j] == -1:
+                    perm[j] = random.randint(0, 1)
+                elif perm[j] == 1:
+                    perm[j] = random.randint(-1, 0)
+                else:
+                    # Use -2 as 1 to allow a contiguous range
+                    perm[j] = random.randint(-2, -1)
+                    if perm[j] == -2:
+                        perm[j] = 1
         return perm
 
     # Average parameters together
@@ -390,7 +392,7 @@ class SatSolver:
 
         for i in range(self.config_params['population_size'] - self.config_params['r']):
             entity = self.generate_perm()
-            new_pop.append(SatPerm(entity, self.fitness_eval(entity), self.config_params['mutation']))
+            new_pop.append(SatPerm(entity, self.fitness_eval(entity), self.dc_fitness(entity),self.config_params['mutation']))
 
         return new_pop
 
@@ -401,13 +403,16 @@ class SatSolver:
             for line in f:
                 perm = list()
                 for i in line.split():
-                    i = int(i)
-                    if i > 0:
-                        perm.append(1)
+                    if i == 'X':
+                        perm.append(-1)
                     else:
-                        perm.append(0)
+                        i = int(i)
+                        if i > 0:
+                            perm.append(1)
+                        else:
+                            perm.append(0)
 
-                seeds.append(SatPerm(perm, self.fitness_eval(perm), self.config_params['mutation']))
+                seeds.append(SatPerm(perm, self.fitness_eval(perm), self.dc_fitness(perm), self.config_params['mutation']))
 
         return seeds
 
