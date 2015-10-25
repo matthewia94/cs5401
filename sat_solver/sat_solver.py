@@ -16,17 +16,18 @@ class SatPerm:
         self.fit = fit
         self.mutation = mutation
         self.dc_fit = dc_fit
+        self.level = int()
 
     def __add__(self, other):
-        return self.fit + other
+        return self.level + other
 
     def __radd__(self, other):
-        return self.fit + other
+        return self.level + other
 
     def __cmp__(self, other):
-        if self.fit == other:
+        if self.level == other:
             return 0
-        elif self.fit < other:
+        elif self.level < other:
             return -1
         else:
             return 1
@@ -174,6 +175,49 @@ class SatSolver:
                 dc += 1
 
         return dc
+
+    def find_dominations(self, perms):
+        dominates_matrix = list()
+        for i in range(len(perms)):
+            dominates = list()
+            for j in range(len(perms)):
+                if perms[i].fit > perms[j].fit and perms[i].dc_fit > perms[j].dc_fit:
+                    dominates.append(j)
+            dominates_matrix.append(dominates)
+
+        return dominates_matrix
+
+    def pareto_sorting(self, perms):
+        levels = list()
+        level = list()
+        level.append(0)
+        levels.append(level)
+
+        dominations = self.find_dominations(perms)
+
+        elements = range(1, len(perms[1:]))
+
+        for i in elements:
+            not_dominated = True
+            for j in range(len(levels)):
+                for k in range(len(levels[j])):
+                    if i in dominations[k]:
+                        not_dominated = False
+                if not_dominated:
+                    for k in levels[j]:
+                        if k in dominations[i]:
+                            levels[j].remove(k)
+                            elements.append(k)
+                    levels[j].append(i)
+                    break
+            if not not_dominated:
+                level = list()
+                level.append(i)
+                levels.append(level)
+
+        for i in range(len(levels)):
+            for j in levels[i]:
+                perms[j].level = i
 
     # Initialize the log file with meta data
     def init_log(self):
@@ -421,13 +465,14 @@ class SatSolver:
         fits = list()
 
         pop = self.pop_initialization()
+        self.pareto_sorting(pop)
         fitness_count = self.config_params['population_size']
         best_unchanged = 0
         avg_unchanged = 0
 
-        best_fit = max(pop, key=attrgetter('fit')).fit
+        best_fit = max(pop, key=attrgetter('level')).level
         avg_fit = sum(pop)/len(pop)
-        best = pop[[i.fit for i in pop].index(best_fit)].perm
+        best = pop[[i.level for i in pop].index(best_fit)].perm
         term_n = self.config_params['term_n']
 
         log.append((fitness_count, avg_fit, best_fit))
@@ -435,6 +480,7 @@ class SatSolver:
         while fitness_count < self.config_params['fit_evals']:
             if (best_unchanged >= term_n or avg_unchanged >= term_n) and self.config_params['r-elitism']:
                 pop = self.restart(pop)
+                self.pareto_sorting(pop)
                 fitness_count += self.config_params['population_size'] - self.config_params['r']
 
             if self.config_params['parent_sel'] == 'k-tournament':
@@ -445,6 +491,7 @@ class SatSolver:
                 par = self.uniform_rand_parent_selection(pop)
 
             children = self.children_generation(par)
+            self.pareto_sorting(children)
             if self.config_params['survival_strategy'] == ',':
                 pop = children
             else:
@@ -457,19 +504,19 @@ class SatSolver:
             elif self.config_params['survival_sel'] == 'uniform-random':
                 pop = self.uniform_rand_survivor_selection(pop)
             else:
-                pop = self.fps_survival_selection(pop)
-
+                pop = self.fps_survivor_selection(pop)
+            self.pareto_sorting(pop)
 
             fitness_count += self.config_params['offspring']
 
-            cur_best_fit = max(pop).fit
+            cur_best_fit = max(pop).level
             cur_avg_fit = sum(pop)/len(pop)
 
             # Update termination conditions
             if cur_best_fit > best_fit:
                 best_fit = cur_best_fit
                 best_unchanged = 0
-                best = pop[[i.fit for i in pop].index(best_fit)].perm
+                best = pop[[i.level for i in pop].index(best_fit)].perm
             elif self.config_params['term_best_fitness']:
                 best_unchanged += 1
 
@@ -479,7 +526,7 @@ class SatSolver:
             elif self.config_params['term_avg_fitness']:
                 avg_unchanged += 1
 
-            fits.append([i.fit for i in pop])
+            fits.append([i.level for i in pop])
             log.append((fitness_count, avg_fit, best_fit))
 
         return log, best, fits
