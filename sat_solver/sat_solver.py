@@ -27,7 +27,7 @@ class SatPerm:
     def __cmp__(self, other):
         if self.level == other:
             return 0
-        elif self.level < other:
+        elif self.level > other:
             return -1
         else:
             return 1
@@ -107,7 +107,7 @@ class SatSolver:
     def run_experiment(self):
         self.init_log()
         best_sol = list()
-        best_fit = 0
+        best_level = 0
         best_fit_vals = list()
 
         # Multiple runs
@@ -117,7 +117,7 @@ class SatSolver:
             self.log_file.close()
             start_time = time.time()
 
-            log, sol, fits = self.run_evolution()
+            log, sol, fits, pop = self.run_evolution()
 
             # Write run to log file
             self.write_log(log)
@@ -126,20 +126,25 @@ class SatSolver:
             end_time = time.time()
             elapsed_time = end_time - start_time
 
-            if self.fitness_eval(sol) > best_fit:
-                best_sol = sol
-                best_fit = self.fitness_eval(sol)
+            if max(pop) > best_level:
+                best_sol = pop
+                best_level = max(pop)
                 best_fit_vals = fits
 
         # Log the best solution in a file
-        self.write_sol(self.fitness_eval(best_sol), best_sol)
+        sol_file = open(self.config_params['solution'], 'w+')
+        sol_file.write('c Solution for: ' + self.config_params['cnf_file'] + '\n')
+        sol_file.close()
+        for i in best_sol:
+            if i.level == max(pop):
+                self.write_sol(i)
 
         # Create plot to show fitness progression
-        plt.boxplot(best_fit_vals)
+        plt.plot([i.dc_fit for i in pop], [i.fit for i in pop], 'ro')
         plt.ylim([0, self.num_clauses + int(.1*self.num_clauses)])
         plt.tick_params(axis='x', which='major', labelsize=6)
         plt.ylabel('Fitness')
-        plt.xlabel('Generation')
+        plt.xlabel("Don't cares")
         plt.title('Fitness graph for ' + self.config_params['cnf_file'])
         plt.savefig(self.config_params['graph'])
 
@@ -219,9 +224,11 @@ class SatSolver:
             for j in levels[i]:
                 perms[j].level = i
 
+        return perms
+
     # Initialize the log file with meta data
     def init_log(self):
-        self.log_file = open(self.config_params['log'], 'a');
+        self.log_file = open(self.config_params['log'], 'w+');
         self.log_file.write('CNF filename: ' + str(self.config_params['cnf_file']) + '\n')
         self.log_file.write('Random number seed value: ' + str(self.rand_seed) + '\n')
         self.log_file.write('Number of runs: ' + str(self.config_params['runs']) + '\n')
@@ -236,29 +243,39 @@ class SatSolver:
         self.log_file.write('k-tournament size (parent): ' + str(self.config_params['tourn_size_parent']) + '\n')
         self.log_file.write('k-tournament size (survival): ' + str(self.config_params['tourn_size_child']) + '\n')
         self.log_file.write('Terminate on fitness evals: ' + str(self.config_params['termination_evals']) + '\n')
-        self.log_file.write('Terminate on avg population fitness: ' + str(self.config_params['term_avg_fitness']) + '\n')
-        self.log_file.write('Terminate on best population fitness: ' + str(self.config_params['term_best_fitness']) + '\n')
+        self.log_file.write('Terminate on avg population level: ' + str(self.config_params['term_avg_fitness']) + '\n')
+        self.log_file.write('Terminate on best population level: ' + str(self.config_params['term_best_fitness']) + '\n')
+        self.log_file.write('Mutation rate: ' + str(self.config_params['mutation']) + '\n')
+        self.log_file.write('R-elitism: ' + str(self.config_params['r-elitism']) + '\n')
+        self.log_file.write('R value: ' + str(self.config_params['r']) + '\n')
+        self.log_file.write('Survival strategy: ' + str(self.config_params['survival_strategy']) + '\n')
+        self.log_file.write('Self-adaption: ' + str(self.config_params['self-adaption']) + '\n')
+        self.log_file.write('Seeded: ' + str(self.config_params['seeded']) + '\n')
+        if self.config_params['seeded']:
+            self.log_file.write('Seed file: ' + str(self.config_params['seed_file']) + '\n')
         self.log_file.write('\n' + 'Result Log' + '\n\n')
         self.log_file.close()
 
     # Write the solution file
-    def write_sol(self, val, perm):
-        sol_file = open(self.config_params['solution'], 'w+')
-        sol_file.write('c Solution for: ' + self.config_params['cnf_file'] + '\n')
-        sol_file.write('c MAXSAT fitness value: ' + str(val) + '\n')
+    def write_sol(self, perm):
+        sol_file = open(self.config_params['solution'], 'a')
+        sol_file.write('c MAXSAT fitness value: ' + str(perm.fit) + '\n')
+        sol_file.write('c Robustness fitness value: ' + str(perm.dc_fit) + '\n')
         sol_file.write('v ')
-        for i in range(len(perm)):
-            if perm[i]:
-                sol_file.write(str(i+1) + ' ')
-            else:
-                sol_file.write(str(-(i+1)) + ' ')
+        for i in range(len(perm.perm)):
+            if perm.perm[i] != -1:
+                if perm.perm[i]:
+                    sol_file.write(str(i+1) + ' ')
+                else:
+                    sol_file.write(str(-(i+1)) + ' ')
         sol_file.close()
 
     # Write a run to the log file
     def write_log(self, log):
         self.log_file = open(self.config_params['log'], 'a')
         for i in log:
-            self.log_file.write(str(i[0]) + '\t' + str(i[1]) + '\t' + str(i[2]) + '\n')
+            self.log_file.write(str(i[0]) + '\t' + str(i[1]) + '\t' + str(i[2]) + '\t' + str(i[3]) + '\t' + str(i[4]) +
+                                '\n')
         self.log_file.write('\n')
         self.log_file.close()
 
@@ -280,12 +297,12 @@ class SatSolver:
 
         # Probability distribution of becoming a parent
         tot_fit = sum(population)
-        prob_parent = [x.fit / float(tot_fit) for x in population]
+        prob_parent = [x.level / float(tot_fit) for x in population]
 
         num_parents = self.config_params['offspring'] + 1
 
         # Randomly pick parents using the generated probability distribution
-        parents_index = numpy.random.choice(a=range(num_parents), size=num_parents, p=prob_parent, replace=False)
+        parents_index = numpy.random.choice(a=range(len(population)), size=population, p=prob_parent, replace=False)
         parents_index = parents_index.tolist()
 
         for i in parents_index:
@@ -313,7 +330,7 @@ class SatSolver:
         mating_pool = list()
 
         for i in range(self.config_params['offspring'] + 1):
-            mating_pool.append(population[random.randint(0, len(population))])
+            mating_pool.append(population[random.randint(0, len(population)-1)])
 
         return mating_pool
 
@@ -379,7 +396,7 @@ class SatSolver:
 
     # Choose survivors using truncation based on fitness
     def truncation_survivor_selection(self, population):
-        population.sort(key=lambda x: x.fit, reverse=True)
+        population.sort(key=lambda x: x.level, reverse=True)
         population = population[:self.config_params['population_size']]
         return population
 
@@ -394,7 +411,7 @@ class SatSolver:
                 r = random.randint(0, len(population)-1)
                 tournament.append(population[r])
 
-            loser = max(tournament, key=getattr('fit'))
+            loser = max(tournament)
 
             new_pop.append(loser)
             population.remove(loser)
@@ -406,7 +423,7 @@ class SatSolver:
         new_pop = list()
 
         for i in range(self.config_params['offspring']):
-            new_pop.append(population[random.randint(0, len(population))])
+            new_pop.append(population[random.randint(0, len(population)-1)])
 
         return new_pop
 
@@ -415,12 +432,12 @@ class SatSolver:
 
         # Probability distribution of becoming a parent
         tot_fit = sum(population)
-        prob_pop = [x.fit / float(tot_fit) for x in population]
+        prob_pop = [x.level / float(tot_fit) for x in population]
 
         num_pop = self.config_params['population_size']
 
         # Randomly pick parents using the generated probability distribution
-        pop_index = numpy.random.choice(a=range(num_pop), size=num_pop, p=prob_pop, replace=False)
+        pop_index = numpy.random.choice(a=range(len(population)-1), size=num_pop, p=prob_pop, replace=False)
         pop_index = pop_index.tolist()
 
         for i in pop_index:
@@ -431,12 +448,12 @@ class SatSolver:
     def restart(self, population):
         new_pop = list()
 
-        population.sort(key=lambda x: x.fit, reverse=True)
+        population.sort(key=lambda x: x.level, reverse=True)
         new_pop.extend(population[:self.config_params['r']])
 
         for i in range(self.config_params['population_size'] - self.config_params['r']):
             entity = self.generate_perm()
-            new_pop.append(SatPerm(entity, self.fitness_eval(entity), self.dc_fitness(entity),self.config_params['mutation']))
+            new_pop.append(SatPerm(entity, self.fitness_eval(entity), self.dc_fitness(entity), self.config_params['mutation']))
 
         return new_pop
 
@@ -465,22 +482,27 @@ class SatSolver:
         fits = list()
 
         pop = self.pop_initialization()
-        self.pareto_sorting(pop)
+        pop = self.pareto_sorting(pop)
         fitness_count = self.config_params['population_size']
         best_unchanged = 0
         avg_unchanged = 0
 
-        best_fit = max(pop, key=attrgetter('level')).level
-        avg_fit = sum(pop)/len(pop)
-        best = pop[[i.level for i in pop].index(best_fit)].perm
+        best_level = max(pop, key=attrgetter('level')).level
+        avg_level = sum(pop)/len(pop)
+        best = pop[[i.level for i in pop].index(best_level)].perm
+        best_fit = max(pop, key=attrgetter('fit')).fit
+        best_dc = max(pop, key=attrgetter('dc_fit')).dc_fit
+        avg_fit = sum([i.fit for i in pop])/len(pop)
+        avg_dc = sum([i.dc_fit for i in pop])/len(pop)
+
         term_n = self.config_params['term_n']
 
-        log.append((fitness_count, avg_fit, best_fit))
+        log.append((fitness_count, avg_fit, best_fit, avg_dc, best_dc))
 
         while fitness_count < self.config_params['fit_evals']:
             if (best_unchanged >= term_n or avg_unchanged >= term_n) and self.config_params['r-elitism']:
                 pop = self.restart(pop)
-                self.pareto_sorting(pop)
+                pop = self.pareto_sorting(pop)
                 fitness_count += self.config_params['population_size'] - self.config_params['r']
 
             if self.config_params['parent_sel'] == 'k-tournament':
@@ -491,11 +513,11 @@ class SatSolver:
                 par = self.uniform_rand_parent_selection(pop)
 
             children = self.children_generation(par)
-            self.pareto_sorting(children)
+            children = self.pareto_sorting(children)
             if self.config_params['survival_strategy'] == ',':
                 pop = children
             else:
-                pop = pop + children
+                pop += children
 
             if self.config_params['survival_sel'] == 'k-tournament':
                 pop = self.k_tournament_survivor_selection(pop)
@@ -505,31 +527,36 @@ class SatSolver:
                 pop = self.uniform_rand_survivor_selection(pop)
             else:
                 pop = self.fps_survivor_selection(pop)
-            self.pareto_sorting(pop)
+            pop = self.pareto_sorting(pop)
 
             fitness_count += self.config_params['offspring']
 
-            cur_best_fit = max(pop).level
-            cur_avg_fit = sum(pop)/len(pop)
+            cur_best_level = max(pop).level
+            cur_avg_level = sum(pop)/len(pop)
+            best_fit = max(pop, key=attrgetter('fit')).fit
+            best_dc = max(pop, key=attrgetter('dc_fit')).dc_fit
+            avg_fit = sum([i.fit for i in pop])/len(pop)
+            avg_dc = sum([i.dc_fit for i in pop])/len(pop)
+
 
             # Update termination conditions
-            if cur_best_fit > best_fit:
-                best_fit = cur_best_fit
+            if cur_best_level > best_level:
+                best_level = cur_best_level
                 best_unchanged = 0
-                best = pop[[i.level for i in pop].index(best_fit)].perm
+                best = pop[[i.level for i in pop].index(best_level)].perm
             elif self.config_params['term_best_fitness']:
                 best_unchanged += 1
 
-            if cur_avg_fit > avg_fit:
-                avg_fit = cur_avg_fit
+            if cur_avg_level > avg_level:
+                avg_level = cur_avg_level
                 avg_unchanged = 0
             elif self.config_params['term_avg_fitness']:
                 avg_unchanged += 1
 
             fits.append([i.level for i in pop])
-            log.append((fitness_count, avg_fit, best_fit))
+            log.append((fitness_count, avg_fit, best_fit, avg_dc, best_dc))
 
-        return log, best, fits
+        return log, best, fits, pop
 
 
 def main():
