@@ -146,6 +146,7 @@ class BoardState:
         self.board[rows-1][cols-1] = 'g'
 
         # Bonus add walls
+        self.walls = []
         if wall_density > 0:
             for i in range(rows):
                 for j in range(cols):
@@ -156,6 +157,8 @@ class BoardState:
                         b = self.bfs((0, 0))
                         if any(int(sys.maxint) in sublist for sublist in b):
                             self.board[i][j] = 'e'
+                        else:
+                            self.walls.append((j, i))
 
 
         # Add pills to the board
@@ -348,6 +351,7 @@ class Game:
             log_file.write('Height: ' + str(self.rows) + '\n')
             log_file.write('Width: ' + str(self.cols) + '\n')
             log_file.write('Pill density: ' + str(self.density) + '\n')
+            log_file.write('Wall density: ' + str(self.wall_density) + '\n')
             log_file.write('Random seed: ' + str(self.rand_seed) + '\n')
             log_file.write('Result log: ' + self.log_file + '\n')
             log_file.write('\n')
@@ -361,6 +365,9 @@ class Game:
             self.log += str(i) + ' ' + str(self.ghosts[i].x) + ' ' + str(self.ghosts[i].y) + '\n'
         for i in self.board.pills:
             self.log += 'p ' + str(i[0]) + ' ' + str(i[1]) + '\n'
+        for i in self.board.walls:
+            self.log += 'w ' + str(i[0]) + ' ' + str(i[1]) + '\n'
+
         self.log += 't ' + str(self.time) + ' ' + str(self.pacman.score) + '\n'
 
     def log_turn(self):
