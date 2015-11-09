@@ -5,6 +5,7 @@ import random
 import time
 import json
 import sys
+from Queue import Queue
 
 
 class Agent:
@@ -72,13 +73,14 @@ class Pacman(Agent):
         valid = ['h']
 
         # Check to make sure moves stay on board
-        if self.y - 1 >= 0:
+        # Also does bonus check for wall
+        if self.y - 1 >= 0 and self.board.board[self.y-1][self.x] != 'w':
             valid.append('u')
-        if self.y + 1 <= self.max_y:
+        if self.y + 1 <= self.max_y and self.board.board[self.y+1][self.x] != 'w':
             valid.append('d')
-        if self.x - 1 >= 0:
+        if self.x - 1 >= 0 and self.board.board[self.y][self.x-1] != 'w':
             valid.append('l')
-        if self.x + 1 <= self.max_x:
+        if self.x + 1 <= self.max_x and self.board.board[self.y][self.x+1] != 'w':
             valid.append('r')
 
         return valid
@@ -103,17 +105,18 @@ class Ghost(Agent):
         act = valid[random.randint(0, len(valid)-1)]
         self.take_action(act)
 
+    # Also does bonus check for wall
     def valid_actions(self):
         # Hold is always valid
         valid = []
 
-        if self.y - 1 >= 0:
+        if self.y - 1 >= 0 and self.board.board[self.y-1][self.x] != 'w':
             valid.append('u')
-        if self.y + 1 < self.max_y:
+        if self.y + 1 <= self.max_y and self.board.board[self.y+1][self.x] != 'w':
             valid.append('d')
-        if self.x - 1 >= 0:
+        if self.x - 1 >= 0 and self.board.board[self.y][self.x-1] != 'w':
             valid.append('l')
-        if self.x + 1 < self.max_x:
+        if self.x + 1 <= self.max_x and self.board.board[self.y][self.x+1] != 'w':
             valid.append('r')
 
         return valid
@@ -125,7 +128,7 @@ class Ghost(Agent):
 
 
 class BoardState:
-    def __init__(self, rows, cols, density):
+    def __init__(self, rows, cols, density, wall_density):
         # Create an empty board
         self.rows = rows
         self.cols = cols
@@ -135,20 +138,35 @@ class BoardState:
         self.pacman = (0, 0)
         self.board[0][0] = 'm'
 
+        # Add ghosts to the board
+        self.ghosts = list()
+        for i in range(3):
+            self.ghosts.append((cols-1, rows-1))
+
+        self.board[rows-1][cols-1] = 'g'
+
+        # Bonus add walls
+        if wall_density > 0:
+            for i in range(rows):
+                for j in range(cols):
+                    if self.board[i][j] != 'm' and self.board[i][j] != 'g' and random.random() <= wall_density/100.0:
+                        # Add wall
+                        self.board[i][j] = 'w'
+                        # Check to make sure there everything is reachable and remove if not
+                        b = self.bfs((0, 0))
+                        if any(int(sys.maxint) in sublist for sublist in b):
+                            self.board[i][j] = 'e'
+
+
         # Add pills to the board
         self.pills = []
         self.num_pills = 0
         for i in range(rows):
             for j in range(cols):
-                if self.board[i][j] != 'm' and random.random() <= density/100.0:
+                if self.board[i][j] != 'm' and self.board[i][j] != 'w' and random.random() <= density/100.0:
                     self.board[i][j] = 'p'
                     self.num_pills += 1
                     self.pills.append((j, i))
-
-        # Add ghosts to the board
-        self.ghosts = list()
-        for i in range(3):
-            self.ghosts.append((cols-1, rows-1))
 
         self.board[rows-1][cols-1] = 'g'
 
@@ -157,6 +175,35 @@ class BoardState:
             for j in range(self.cols):
                 print self.board[i][j],
             print
+
+    # Bonus check for connectivity
+    def bfs(self, v):
+        # Initialize all distances to infinity
+        b = [[int(sys.maxint) for x in range(self.cols)] for x in range(self.rows)]
+        # Mark walls as -1 to differentiate from unreachable and wall
+        for i in range(self.rows):
+            for j in range(self.cols):
+                if self.board[i][j] == 'w':
+                    b[i][j] = -1
+        q = Queue()
+
+        b[v[1]][v[0]] = 0
+        q.put(v)
+
+        while not q.empty():
+            u = q.get()
+
+            for i in [-1, 1]:
+                if 0 <= u[1]+i < self.rows:
+                    if b[u[1]+i][u[0]] == sys.maxint:
+                        b[u[1]+i][u[0]] = b[v[1]][v[0]] + 1
+                        q.put((u[0], u[1]+i))
+                if 0 <= u[0]+i < self.cols:
+                    if b[u[1]][u[0]+i] == sys.maxint:
+                        b[u[1]][u[0]+i] = b[v[1]][v[0]] + 1
+                        q.put((u[0]+i, u[1]))
+
+        return b
 
 
 class Game:
@@ -170,9 +217,15 @@ class Game:
         self.cols = config_params['width']
         self.density = config_params['density']
 
+        # Bonus setup
+        if 'wall_density' in config_params.keys():
+            self.wall_density = config_params['wall_density']
+        else:
+            self.wall_density = 0
+
         # Setup the game
         self.time = 2*self.rows*self.cols
-        self.board = BoardState(self.rows, self.cols, self.density)
+        self.board = BoardState(self.rows, self.cols, self.density, self.wall_density)
         self.game_over = False
 
         # Create Ms.Pacman
@@ -204,11 +257,11 @@ class Game:
 
     def run_experiment(self):
         # Open and write headers to log file and result file
-        log_file = open(self.log_file, 'w+')
-        log_file.close()
         result_file = open(self.result_file, 'w+')
         result_file.write('Result Log\n\n')
         result_file.close()
+
+        self.log_header()
 
         for i in range(self.runs):
             best_log = ''
@@ -233,7 +286,7 @@ class Game:
             result_file.close()
 
     def board_reset(self):
-        self.board = BoardState(self.rows, self.cols, self.density)
+        self.board = BoardState(self.rows, self.cols, self.density, self.wall_density)
         self.pacman.reset(self.board)
         for i in range(len(self.ghosts)):
             self.ghosts[i].reset(self.board)
@@ -289,6 +342,16 @@ class Game:
 
     def end_game(self):
         self.game_over = True
+
+    def log_header(self):
+        with open(self.log_file, 'w+') as log_file:
+            log_file.write('Height: ' + str(self.rows) + '\n')
+            log_file.write('Width: ' + str(self.cols) + '\n')
+            log_file.write('Pill density: ' + str(self.density) + '\n')
+            log_file.write('Random seed: ' + str(self.rand_seed) + '\n')
+            log_file.write('Result log: ' + self.log_file + '\n')
+            log_file.write('\n')
+            log_file.close()
 
     def init_log(self):
         # Write initial info for log file
