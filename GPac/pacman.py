@@ -4,6 +4,7 @@ __eamil__ = 'mia2n4@mst.edu'
 import random
 import time
 import json
+import sys
 
 
 class Agent:
@@ -308,7 +309,12 @@ class Game:
 
 
 def main():
-    g = Game(filename='config/default.cfg')
+    if len(sys.argv) == 1:
+        f = 'config/default.cfg'
+    else:
+        f = sys.argv[1]
+
+    g = Game(filename=f)
     g.run_experiment()
 
 if __name__ == "__main__":
