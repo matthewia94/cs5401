@@ -6,6 +6,7 @@ import time
 import json
 import sys
 from Queue import Queue
+from tree import Tree
 
 
 class Agent:
@@ -48,13 +49,23 @@ class Agent:
 class Pacman(Agent):
     def __init__(self, x, y, max_x, max_y, board):
         Agent.__init__(self, x, y, max_x, max_y, board)
+        self.pills = 0
         self.score = 0
 
+        self.tree = Tree('', 0)
+        self.functional = ['add', 'sub', 'mult', 'div', 'rand']
+        self.terminal = ['x', 'y', 'float']
+        self.max_depth = 3
+
+        self.init_tree()
+
+    # Randomly select an action from the list of valid actions
     def generate_action(self):
         valid = self.valid_actions()
         act = valid[random.randint(0, len(valid)-1)]
         self.take_action(act)
 
+    # Perform the actual move of ms pacman by updating her position
     def take_action(self, act):
         if act == 'u':
             self.move_up()
@@ -68,6 +79,8 @@ class Pacman(Agent):
             print 'Invalid move!'
         self.update_score()
 
+    # Find the legal actions from the set of all possible actions regarless of legality (u, d, l, r, h)
+    # Also check for walls
     def valid_actions(self):
         # Hold is always valid
         valid = ['h']
@@ -85,31 +98,141 @@ class Pacman(Agent):
 
         return valid
 
+    # Check if you found a pill and increment the psuedo-score if you did
     def update_score(self):
         if (self.x, self.y) in self.board.pills:
-            self.score += 1
+            self.pills += 1
+            self.score = int(self.pills/float(self.board.tot_pills) * 100)
+            if self.board.num_pills == 0:
+                self.score += int(self.board.time/float(self.board.tot_time) * 100)
 
+    # Move position back to start (top left)
     def reset(self, board):
         self.board = board
         self.x = 0
         self.y = 0
+        self.pills = 0
         self.score = 0
+
+    def init_tree(self):
+        self.tree.data = self.functional[random.randint(0, len(self.functional)-1)]
+        if random.randint(0, 1) == 0:
+            self.init_full(self.tree, 0)
+        else:
+            self.init_grow(self.tree, 0)
+
+    def init_full(self, tree, depth):
+        if depth < self.max_depth:
+            nodel = Tree(self.functional[random.randint(0, len(self.functional)-1)], depth)
+            noder = Tree(self.functional[random.randint(0, len(self.functional)-1)], depth)
+            self.tree.add_child(nodel)
+            self.tree.add_child(noder)
+            for i in range(len(tree.children)):
+                self.init_full(tree.children[i], depth+1)
+        else:
+            rleft = random.randint(0, len(self.terminal))
+            rright = random.randint(0, len(self.terminal))
+
+            nodel = Tree(self.terminal[rleft], depth)
+            noder = Tree(self.terminal[rright], depth)
+
+            self.tree.add_child(nodel)
+            self.tree.add_child(noder)
+
+    def init_grow(self, tree, depth):
+        if depth < self.max_depth:
+            randterm = random.randint(0, 1)
+            if randterm == 0:
+                nodel = Tree(self.functional[random.randint(0, len(self.functional)-1)], depth)
+            else:
+                nodel = Tree(self.terminal[random.randint(0, len(self.terminal)-1)], depth)
+
+            randterm = random.randint(0, 1)
+            if randterm == 0:
+                noder = Tree(self.functional[random.randint(0, len(self.functional)-1)], depth)
+            else:
+                noder = Tree(self.terminal[random.randint(0, len(self.terminal)-1)], depth)
+            self.tree.add_child(nodel)
+            self.tree.add_child(noder)
+            for i in range(len(tree.children)):
+                if tree.children[i] in self.functional:
+                    self.init_full(tree.children[i], depth+1)
+        else:
+            rleft = random.randint(0, 2)
+            rright = random.randint(0, 2)
+
+            # Choose terminal left
+            if rleft == 0:
+                nodel = Tree('x', depth)
+            elif rleft == 1:
+                nodel = Tree('y', depth)
+            else:
+                nodel = Tree(random.random()*100, depth)
+
+            # Choose terminal right
+            if rright == 0:
+                noder = Tree('x', depth)
+            elif rright == 1:
+                noder = Tree('y', depth)
+            else:
+                noder = Tree(random.random()*100, depth)
+
+            self.tree.add_child(nodel)
+            self.tree.add_child(noder)
+
+    # Parse the tree and return the result as a float
+    def parse_tree(self, tree):
+        res = 0
+
+        if len(tree.children) > 0:
+            if tree.data == 'add':
+                res = self.parse_tree(tree.children[0]) + self.parse_tree(tree.children[1])
+            elif tree.data == 'sub':
+                res = self.parse_tree(tree.children[0]) - self.parse_tree(tree.children[1])
+            elif tree.data == 'mult':
+                res = self.parse_tree(tree.children[0]) * self.parse_tree(tree.children[1])
+            elif tree.data == 'div':
+                res = self.parse_tree(tree.children[0]) / self.parse_tree(tree.children[1])
+            else:
+                if random.randint(0, 1) == 0:
+                    res = self.parse_tree(tree.children[0])
+                else:
+                    res = self.parse_tree(tree.children[1])
+
+        else:
+            if tree.data == 'x':
+                self.pill_dist()
+            elif tree.data == 'y':
+                self.ghost_dist()
+            else:
+                res = int(random.random() * 100)
+
+        return res
+
+    def pill_dist(self):
+        return 1
+
+    def ghost_dist(self):
+        return 1
 
 
 class Ghost(Agent):
     def __init__(self, x, y, max_x, max_y, board):
         Agent.__init__(self, x, y, max_x, max_y, board)
 
+    # Randomly choose an action from the legal moves
     def generate_action(self):
         valid = self.valid_actions()
         act = valid[random.randint(0, len(valid)-1)]
         self.take_action(act)
 
+    # Create a list of legal moves for the ghost, options are u, d, l, r
     # Also does bonus check for wall
     def valid_actions(self):
-        # Hold is always valid
+        # The ghost has to move
         valid = []
 
+        # Check all four possible moves and keep the legal ones
         if self.y - 1 >= 0 and self.board.board[self.y-1][self.x] != 'w':
             valid.append('u')
         if self.y + 1 <= self.max_y and self.board.board[self.y+1][self.x] != 'w':
@@ -121,6 +244,7 @@ class Ghost(Agent):
 
         return valid
 
+    # Move back to the starting position (bottom right)
     def reset(self, board):
         self.board = board
         self.x = self.max_x
@@ -160,7 +284,6 @@ class BoardState:
                         else:
                             self.walls.append((j, i))
 
-
         # Add pills to the board
         self.pills = []
         self.num_pills = 0
@@ -171,6 +294,7 @@ class BoardState:
                     self.num_pills += 1
                     self.pills.append((j, i))
 
+        self.tot_pills = self.num_pills
         self.board[rows-1][cols-1] = 'g'
 
     def print_board(self):
@@ -228,6 +352,7 @@ class Game:
 
         # Setup the game
         self.time = 2*self.rows*self.cols
+        self.tot_time = self.time
         self.board = BoardState(self.rows, self.cols, self.density, self.wall_density)
         self.game_over = False
 
@@ -264,7 +389,7 @@ class Game:
         result_file.write('Result Log\n\n')
         result_file.close()
 
-        self.log_header()
+        self.result_header()
 
         for i in range(self.runs):
             best_log = ''
@@ -282,7 +407,7 @@ class Game:
                     best_log = self.log
                     result_file.write(str(j) + '\t' + str(best_fit) + '\n')
                 self.board_reset()
-            log_file = open(self.log_file, 'a')
+            log_file = open(self.log_file, 'w+')
             log_file.write(best_log + '\n')
             log_file.close()
             result_file.write('\n')
@@ -346,8 +471,8 @@ class Game:
     def end_game(self):
         self.game_over = True
 
-    def log_header(self):
-        with open(self.log_file, 'w+') as log_file:
+    def result_header(self):
+        with open(self.result_file, 'w+') as log_file:
             log_file.write('Height: ' + str(self.rows) + '\n')
             log_file.write('Width: ' + str(self.cols) + '\n')
             log_file.write('Pill density: ' + str(self.density) + '\n')
