@@ -8,7 +8,6 @@ import sys
 from Queue import Queue
 from tree import Tree
 import numpy
-import copy
 
 
 class Agent:
@@ -19,6 +18,11 @@ class Agent:
         self.max_y = max_y
         self.board = board
 
+    # Perform the specific action based on the character passed to the function
+    # u: up
+    # d: down
+    # l: left
+    # r: right
     def take_action(self, act):
         if act == 'u':
             self.move_up()
@@ -31,25 +35,29 @@ class Agent:
         else:
             print 'Invalid move!'
 
+    # Move position up one space on the grid
     def move_up(self):
         if self.y - 1 >= 0:
             self.y -= 1
 
+    # Move position down one space on the grid
     def move_down(self):
         if self.y + 1 <= self.max_y:
             self.y += 1
 
+    # Move position right one space on the grid
     def move_right(self):
         if self.x + 1 <= self.max_x:
             self.x += 1
 
+    # Move the position left on space on the grid
     def move_left(self):
         if self.x - 1 >= 0:
             self.x -= 1
 
 
 class Pacman(Agent):
-    def __init__(self, x, y, max_x, max_y, board):
+    def __init__(self, x, y, max_x, max_y, board, depth):
         Agent.__init__(self, x, y, max_x, max_y, board)
         self.pills = 0
         self.score = 0
@@ -57,7 +65,7 @@ class Pacman(Agent):
         self.tree = Tree('', 0)
         self.functional = ['add', 'sub', 'mult', 'div', 'rand']
         self.terminal = ['x', 'y', 'float']
-        self.max_depth = 2
+        self.max_depth = depth
 
         self.init_tree()
 
@@ -166,17 +174,21 @@ class Pacman(Agent):
         self.pills = 0
         self.score = 0
 
+    # Create a GP tree using ramped half and half
     def init_tree(self):
-        self.tree.data = self.functional[random.randint(0, len(self.functional)-1)]
-        if random.randint(0, 1) == -1:
+        if random.randint(0, 1) == 0:
+            self.tree.data = random.choice(self.functional)
             self.init_full(self.tree, 0)
         else:
+            posvals = self.functional + self.terminal
+            self.tree.data = random.choice(posvals)
             self.init_grow(self.tree, 0)
 
+    # Create a GP tree using full depth initialization
     def init_full(self, tree, depth):
         if depth < self.max_depth-1:
-            nodel = Tree(self.functional[random.randint(0, len(self.functional)-1)], depth+1)
-            noder = Tree(self.functional[random.randint(0, len(self.functional)-1)], depth+1)
+            nodel = Tree(random.choice(self.functional), depth+1)
+            noder = Tree(random.choice(self.functional), depth+1)
             tree.add_child(nodel)
             tree.add_child(noder)
             for i in range(len(tree.children)):
@@ -190,37 +202,40 @@ class Pacman(Agent):
 
         return tree
 
+    # Create a GP tree using grow initialization
     def init_grow(self, tree, depth):
-        if depth < self.max_depth-1:
-            if random.randint(0, 1) == 0:
-                nodel = Tree(self.functional[random.randint(0, len(self.functional)-1)], depth+1)
+        if tree.data not in self.terminal:
+            if depth < self.max_depth-1:
+                if random.randint(0, 1) == 0:
+                    nodel = Tree(random.choice(self.functional), depth+1)
+                else:
+                    nodel = self.pick_terminal(depth+1)
+                tree.add_child(nodel)
+
+                if random.randint(0, 1) == 0:
+                    noder = Tree(random.choice(self.functional), depth+1)
+                else:
+                    noder = self.pick_terminal(depth+1)
+                tree.add_child(noder)
+
+                for i in range(len(tree.children)):
+                    if tree.children[i].data in self.functional:
+                        tree.children[i] = self.init_full(tree.children[i], depth+1)
             else:
                 nodel = self.pick_terminal(depth+1)
-            tree.add_child(nodel)
-
-            if random.randint(0, 1) == 0:
-                noder = Tree(self.functional[random.randint(0, len(self.functional)-1)], depth+1)
-            else:
                 noder = self.pick_terminal(depth+1)
-            tree.add_child(noder)
 
-            for i in range(len(tree.children)):
-                if tree.children[i].data in self.functional:
-                    tree.children[i] = self.init_full(tree.children[i], depth+1)
-        else:
-            nodel = self.pick_terminal(depth+1)
-            noder = self.pick_terminal(depth+1)
-
-            tree.add_child(nodel)
-            tree.add_child(noder)
+                tree.add_child(nodel)
+                tree.add_child(noder)
 
         return tree
 
+    # Create a random terminal node
     def pick_terminal(self, depth):
-        rand = random.randint(0, len(self.terminal)-1)
+        rand = random.choice(self.terminal)
 
-        if self.terminal[rand] != 'float':
-            node = Tree(self.terminal[rand], depth)
+        if rand != 'float':
+            node = Tree(rand, depth)
         else:
             node = Tree(random.random() * 100, depth)
 
@@ -240,21 +255,43 @@ class Pacman(Agent):
             elif tree.data == 'div':
                 res = self.parse_tree(tree.children[0], x, y) / self.parse_tree(tree.children[1], x, y)
             else:
-                if random.randint(0, 1) == 0:
-                    res = self.parse_tree(tree.children[0], x, y)
-                else:
-                    res = self.parse_tree(tree.children[1], x, y)
-
+                res = random.uniform(self.parse_tree(tree.children[0], x, y), self.parse_tree(tree.children[1], x, y))
         else:
             if tree.data == 'x':
-                self.pill_dist(x, y)
+                res = self.pill_dist(x, y)
             elif tree.data == 'y':
-                self.ghost_dist(x, y)
+                res = self.ghost_dist(x, y)
             else:
-                res = tree.data
+                res = float(tree.data)
 
         return res
 
+    # Return the equation represented by the tree as a string
+    def print_tree(self, tree):
+        res = ''
+
+        if len(tree.children) > 0:
+            if tree.data == 'add':
+                res = self.print_tree(tree.children[0]) + ' + ' + self.print_tree(tree.children[1])
+            elif tree.data == 'sub':
+                res = self.print_tree(tree.children[0]) + ' - ' + self.print_tree(tree.children[1])
+            elif tree.data == 'mult':
+                res = self.print_tree(tree.children[0]) + ' * ' + self.print_tree(tree.children[1])
+            elif tree.data == 'div':
+                res = self.print_tree(tree.children[0]) + ' / ' + self.print_tree(tree.children[1])
+            else:
+                res = 'rand(' + self.print_tree(tree.children[0]) + ', ' + self.print_tree(tree.children[1]) + ')'
+        else:
+            if tree.data == 'x':
+                res = 'pill_dist'
+            elif tree.data == 'y':
+                res = 'ghost_dist'
+            else:
+                res = str(tree.data)
+
+        return res
+
+    # The manhattan distance to the nearest pill
     def pill_dist(self, x, y):
         mind = float("inf")
         for i in self.board.pills:
@@ -264,6 +301,7 @@ class Pacman(Agent):
 
         return mind
 
+    # The manhattan distance to the nearest ghost
     def ghost_dist(self, x, y):
         mind = float("inf")
         for i in self.board.ghosts:
@@ -273,58 +311,14 @@ class Pacman(Agent):
 
         return mind
 
-    def rand_node(self, tree):
-        nodes = Queue()
-        nodes.put(tree)
-        num_nodes = 1
-        selected = tree
-
-        # Randomly pick an element
-        while not nodes.empty():
-            n = nodes.get()
-            if random.randint(1, num_nodes) == num_nodes:
-                selected = n
-            num_nodes += 1
-            for i in n.children:
-                nodes.put(i)
-
-        return selected
-
     def mutate(self, tree):
-        selected = self.rand_node(tree)
-        # Grow at the randomly selected element
-        selected.children = []
-        self.init_grow(selected, 0)
+        selected = tree.rand_node()
+
+        if selected in self.functional:
+            # Grow at the randomly selected element
+            selected.children = []
+            self.init_grow(selected, 0)
         return tree
-
-    def crossover(self, parent1, parent2):
-        child1 = copy.deepcopy(parent1)
-        child2 = copy.deepcopy(parent2)
-
-        sel1 = self.rand_node(child1)
-        sel2 = self.rand_node(child2)
-
-        q = Queue()
-        q.put(child1)
-        while not q.empty():
-            node = q.get()
-            for i in node.children:
-                q.put(i)
-                if i is sel1:
-                    node.children.remove(sel1)
-                    node.add_child(sel2)
-
-        q = Queue()
-        q.put(child2)
-        while not q.empty():
-            node = q.get()
-            for i in node.children:
-                q.put(i)
-                if i is sel2:
-                    node.children.remove(sel2)
-                    node.add_child(sel1)
-
-        return child1, child2
 
 
 class Ghost(Agent):
@@ -334,7 +328,7 @@ class Ghost(Agent):
     # Randomly choose an action from the legal moves
     def generate_action(self):
         valid = self.valid_actions()
-        act = valid[random.randint(0, len(valid)-1)]
+        act = random.choice(valid)
         self.take_action(act)
 
     # Create a list of legal moves for the ghost, options are u, d, l, r
@@ -479,6 +473,7 @@ class Game:
         self.log = ''
         self.log_file = config_params['log_file']
         self.result_file = config_params['result_file']
+        self.sol_file = config_params['sol_file']
 
         # Evolutionary parameters
         self.pop_size = config_params['pop_size']
@@ -486,8 +481,10 @@ class Game:
         self.mutation = config_params['mutation_rate']
         self.tourn_size = config_params['tourn_size']
         self.over_percent = config_params['over_percent']
+        self.parent_strat = config_params['parent_strat']
         self.survival_strat = config_params['survival_strat']
         self.parsimony_coef = config_params['parsimony_coef']
+        self.max_depth = config_params['max_tree_depth']
         self.population = []
         self.evals = 0
         self.run_best = 0
@@ -508,49 +505,53 @@ class Game:
         self.population = []
         for i in range(self.pop_size):
             # Create Ms.Pacman
-            self.population.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board))
+            self.population.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board, self.max_depth))
 
-    def fps_parent_selection(self):
+    def fps_parent_selection(self, population, size):
         mating_pool = list()
 
         # Probability distribution of becoming a parent
-        tot_fit = sum(self.population)
-        prob_parent = [x.score / float(tot_fit) for x in self.population]
+        tot_fit = sum(population)
+        prob_parent = [x.score / float(tot_fit) for x in population]
 
         # Randomly pick parents using the generated probability distribution
-        parents_index = numpy.random.choice(a=range(len(self.population)), size=self.offspring, p=prob_parent, replace=True)
+        parents_index = numpy.random.choice(a=range(len(population)), size=size, p=prob_parent, replace=True)
         parents_index = parents_index.tolist()
 
         for i in parents_index:
-            mating_pool.append(self.population[i])
+            mating_pool.append(population[i])
 
         return mating_pool
 
     def overselection_parent(self):
         mating_pool = []
         self.population.sort(key=lambda x: x.score, reverse=True)
-        mating_pool = self.population[:len(self.pop_size)*self.over_percent]
-        for i in range(self.offspring*self.over_percent):
-            mating_pool.append(self.population[random.randint(0, self.pop_size*self.over_percent)])
-        for i in range(self.offspring*(1-self.over_percent)):
-            mating_pool.append(self.population[random.randint(0, self.pop_size*(1-self.over_percent))])
+        best_pool = self.population[:int(self.pop_size*self.over_percent)]
+        worst_pool = self.population[int(self.pop_size*(1-self.over_percent)):]
+        for i in range(int(self.offspring*self.over_percent)):
+            mating_pool += self.fps_parent_selection(best_pool, self.offspring*self.over_percent)
+        for i in range(int(self.offspring*(1-self.over_percent))):
+            mating_pool += self.fps_parent_selection(worst_pool, self.offspring*(1-self.over_percent))
         return mating_pool
 
     def evolve(self):
         new_pop = []
-        parents = self.fps_parent_selection()
+        if self.parent_strat == 'over-selection':
+            parents = self.overselection_parent()
+        else:
+            parents = self.fps_parent_selection(self.population, self.offspring)
         par_iter = 0
         while len(new_pop) < self.pop_size:
             if random.random() < self.mutation:
-                new_pop.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board))
-                new_pop.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board))
+                new_pop.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board, self.max_depth))
+                new_pop.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board, self.max_depth))
                 new_pop[-2].tree = parents[par_iter].mutate(parents[par_iter].tree)
                 new_pop[-1].tree = parents[par_iter].mutate(parents[par_iter].tree)
                 par_iter += 2
             else:
-                new_pop.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board))
-                new_pop.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board))
-                tree1, tree2 = parents[par_iter].crossover(parents[par_iter].tree, parents[par_iter+1].tree)
+                new_pop.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board, self.max_depth))
+                new_pop.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board, self.max_depth))
+                tree1, tree2 = parents[par_iter].tree.crossover(parents[par_iter].tree, parents[par_iter+1].tree)
                 new_pop[-2].tree = tree1
                 new_pop[-1].tree = tree2
                 par_iter += 2
@@ -560,6 +561,8 @@ class Game:
                 self.best_fit = current_fit
                 log_file = open(self.log_file, 'w+')
                 log_file.write(self.log)
+                sol_file = open(self.sol_file, 'w+')
+                sol_file.write(new_pop[-2].print_tree(new_pop[-2].tree))
                 log_file.close()
             self.board_reset()
             new_pop[-1].board = self.board
@@ -568,6 +571,8 @@ class Game:
                 self.best_fit = current_fit
                 log_file = open(self.log_file, 'w+')
                 log_file.write(self.log)
+                sol_file = open(self.sol_file, 'w+')
+                sol_file.write(new_pop[-1].print_tree(new_pop[-1].tree))
                 log_file.close()
             self.board_reset()
 
@@ -595,8 +600,8 @@ class Game:
             tournament = list()
             # Pick tourn_size_parents randomly
             for i in range(0, self.tourn_size):
-                r = random.randint(0, len(population)-1)
-                tournament.append(population[r])
+                r = random.choice(population)
+                tournament.append(r)
 
             loser = max(tournament)
 
@@ -662,14 +667,13 @@ class Game:
         while not self.game_over and self.time > 0 and len(self.board.pills) > 0:
             self.turn(pacman)
             self.time -= 1
+            if len(self.board.pills) == 0:
+                pacman.score += int(self.time/float(self.tot_time) * 100)
             self.log_turn(pacman)
-
-        if len(self.board.pills) == 0:
-            pacman.score += int(self.time/float(self.tot_time) * 100)
 
         # Parsimony pressure
         pacman.score -= self.parsimony_coef*Tree.find_depth(pacman.tree)
-        pacman.score = max(pacman.score, 0)
+        pacman.score = max(pacman.score, 1)
 
         return pacman.score
 
@@ -719,6 +723,15 @@ class Game:
             log_file.write('Wall density: ' + str(self.wall_density) + '\n')
             log_file.write('Random seed: ' + str(self.rand_seed) + '\n')
             log_file.write('Result log: ' + self.log_file + '\n')
+            log_file.write('Solution file: ' + self.sol_file + '\n')
+            log_file.write('Pacman population size: ' + str(self.pop_size) + '\n')
+            log_file.write('Pacman lambda: ' + str(self.offspring) + '\n')
+            log_file.write('Pacman mutation rate: ' + str(self.mutation) + '\n')
+            log_file.write('Pacman parent selection: ' + self.parent_strat + '\n')
+            log_file.write('Pacman survival strategy: ' + self.survival_strat + '\n')
+            if self.survival_strat == 'k-tourn':
+                log_file.write('Pacman tournament size: ' + str(self.tourn_size) + '\n')
+            log_file.write('Max tree depth: ' + str(self.max_depth) + '\n')
             log_file.write('\n')
             log_file.close()
 
