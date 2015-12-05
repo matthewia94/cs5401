@@ -322,8 +322,15 @@ class Pacman(Agent):
 
 
 class Ghost(Agent):
-    def __init__(self, x, y, max_x, max_y, board):
+    def __init__(self, x, y, max_x, max_y, board, depth):
         Agent.__init__(self, x, y, max_x, max_y, board)
+
+        self.tree = Tree('', 0)
+        self.functional = ['add', 'sub', 'mult', 'div', 'rand']
+        self.terminal = ['x', 'y', 'float']
+        self.max_depth = depth
+
+        self.init_tree()
 
     # Randomly choose an action from the legal moves
     def generate_action(self):
@@ -354,6 +361,152 @@ class Ghost(Agent):
         self.board = board
         self.x = self.max_x
         self.y = self.max_y
+
+        # Create a GP tree using ramped half and half
+    def init_tree(self):
+        if random.randint(0, 1) == 0:
+            self.tree.data = random.choice(self.functional)
+            self.init_full(self.tree, 0)
+        else:
+            posvals = self.functional + self.terminal
+            self.tree.data = random.choice(posvals)
+            self.init_grow(self.tree, 0)
+
+    # Create a GP tree using full depth initialization
+    def init_full(self, tree, depth):
+        if depth < self.max_depth-1:
+            nodel = Tree(random.choice(self.functional), depth+1)
+            noder = Tree(random.choice(self.functional), depth+1)
+            tree.add_child(nodel)
+            tree.add_child(noder)
+            for i in range(len(tree.children)):
+                tree.children[i] = self.init_full(tree.children[i], depth+1)
+        else:
+            nodel = self.pick_terminal(depth+1)
+            noder = self.pick_terminal(depth+1)
+
+            tree.add_child(nodel)
+            tree.add_child(noder)
+
+        return tree
+
+    # Create a GP tree using grow initialization
+    def init_grow(self, tree, depth):
+        if tree.data not in self.terminal:
+            if depth < self.max_depth-1:
+                if random.randint(0, 1) == 0:
+                    nodel = Tree(random.choice(self.functional), depth+1)
+                else:
+                    nodel = self.pick_terminal(depth+1)
+                tree.add_child(nodel)
+
+                if random.randint(0, 1) == 0:
+                    noder = Tree(random.choice(self.functional), depth+1)
+                else:
+                    noder = self.pick_terminal(depth+1)
+                tree.add_child(noder)
+
+                for i in range(len(tree.children)):
+                    if tree.children[i].data in self.functional:
+                        tree.children[i] = self.init_full(tree.children[i], depth+1)
+            else:
+                nodel = self.pick_terminal(depth+1)
+                noder = self.pick_terminal(depth+1)
+
+                tree.add_child(nodel)
+                tree.add_child(noder)
+
+        return tree
+
+    # Create a random terminal node
+    def pick_terminal(self, depth):
+        rand = random.choice(self.terminal)
+
+        if rand != 'float':
+            node = Tree(rand, depth)
+        else:
+            node = Tree(random.random() * 100, depth)
+
+        return node
+
+    # Parse the tree and return the result as a float
+    def parse_tree(self, tree, x, y):
+        res = 0
+
+        if len(tree.children) > 0:
+            if tree.data == 'add':
+                res = self.parse_tree(tree.children[0], x, y) + self.parse_tree(tree.children[1], x, y)
+            elif tree.data == 'sub':
+                res = self.parse_tree(tree.children[0], x, y) - self.parse_tree(tree.children[1], x, y)
+            elif tree.data == 'mult':
+                res = self.parse_tree(tree.children[0], x, y) * self.parse_tree(tree.children[1], x, y)
+            elif tree.data == 'div':
+                res = self.parse_tree(tree.children[0], x, y) / self.parse_tree(tree.children[1], x, y)
+            else:
+                res = random.uniform(self.parse_tree(tree.children[0], x, y), self.parse_tree(tree.children[1], x, y))
+        else:
+            if tree.data == 'x':
+                res = self.pill_dist(x, y)
+            elif tree.data == 'y':
+                res = self.ghost_dist(x, y)
+            else:
+                res = float(tree.data)
+
+        return res
+
+    # Return the equation represented by the tree as a string
+    def print_tree(self, tree):
+        res = ''
+
+        if len(tree.children) > 0:
+            if tree.data == 'add':
+                res = self.print_tree(tree.children[0]) + ' + ' + self.print_tree(tree.children[1])
+            elif tree.data == 'sub':
+                res = self.print_tree(tree.children[0]) + ' - ' + self.print_tree(tree.children[1])
+            elif tree.data == 'mult':
+                res = self.print_tree(tree.children[0]) + ' * ' + self.print_tree(tree.children[1])
+            elif tree.data == 'div':
+                res = self.print_tree(tree.children[0]) + ' / ' + self.print_tree(tree.children[1])
+            else:
+                res = 'rand(' + self.print_tree(tree.children[0]) + ', ' + self.print_tree(tree.children[1]) + ')'
+        else:
+            if tree.data == 'x':
+                res = 'pill_dist'
+            elif tree.data == 'y':
+                res = 'ghost_dist'
+            else:
+                res = str(tree.data)
+
+        return res
+
+    # The manhattan distance to the nearest pill
+    def pill_dist(self, x, y):
+        mind = float("inf")
+        for i in self.board.pills:
+            temp = abs(x - i[0]) + abs(y - i[1])
+            if temp < mind:
+                mind = temp
+
+        return mind
+
+    # The manhattan distance to the nearest ghost
+    def ghost_dist(self, x, y):
+        mind = float("inf")
+        for i in self.board.ghosts:
+            temp = abs(x - i[0]) + abs(y - i[1])
+            if temp < mind:
+                mind = temp
+
+        return mind
+
+    def mutate(self, tree):
+        selected = tree.rand_node()
+
+        if selected in self.functional:
+            # Grow at the randomly selected element
+            selected.children = []
+            self.init_grow(selected, 0)
+        return tree
 
 
 class BoardState:
@@ -463,7 +616,7 @@ class Game:
 
         # Create ghosts
         self.ghosts = list()
-        self.ghosts = [Ghost(self.cols-1, self.rows-1, self.cols-1, self.rows-1, self.board) for i in range(3)]
+        self.ghosts = [Ghost(self.cols-1, self.rows-1, self.cols-1, self.rows-1, self.board, self.max_depth) for i in range(3)]
 
         # Setup evolutionary parameters
         self.runs = config_params['runs']
