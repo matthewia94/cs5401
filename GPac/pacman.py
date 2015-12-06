@@ -8,6 +8,7 @@ import sys
 from Queue import Queue
 from tree import Tree
 import numpy
+import copy
 
 
 class Agent:
@@ -60,14 +61,16 @@ class Pacman(Agent):
     def __init__(self, x, y, max_x, max_y, board, depth):
         Agent.__init__(self, x, y, max_x, max_y, board)
         self.pills = 0
-        self.score = 0
 
         self.tree = Tree('', 0)
         self.functional = ['add', 'sub', 'mult', 'div', 'rand']
         self.terminal = ['x', 'y', 'float']
         self.max_depth = depth
+        self.score = 0
 
         self.init_tree()
+
+        self.log = ''
 
     def __add__(self, other):
         return self.score + other
@@ -136,7 +139,7 @@ class Pacman(Agent):
         elif act == 'r':
             self.move_right()
         elif act != 'h':
-            print 'Invalid move!'
+            print 'Invalid move Pacman!'
         self.update_score()
 
     # Find the legal actions from the set of all possible actions regarless of legality (u, d, l, r, h)
@@ -272,13 +275,13 @@ class Pacman(Agent):
 
         if len(tree.children) > 0:
             if tree.data == 'add':
-                res = self.print_tree(tree.children[0]) + ' + ' + self.print_tree(tree.children[1])
+                res = '(' + self.print_tree(tree.children[0]) + ') + (' + self.print_tree(tree.children[1]) + ')'
             elif tree.data == 'sub':
-                res = self.print_tree(tree.children[0]) + ' - ' + self.print_tree(tree.children[1])
+                res = '(' + self.print_tree(tree.children[0]) + ') - (' + self.print_tree(tree.children[1]) + ')'
             elif tree.data == 'mult':
-                res = self.print_tree(tree.children[0]) + ' * ' + self.print_tree(tree.children[1])
+                res = '(' + self.print_tree(tree.children[0]) + ') * (' + self.print_tree(tree.children[1]) + ')'
             elif tree.data == 'div':
-                res = self.print_tree(tree.children[0]) + ' / ' + self.print_tree(tree.children[1])
+                res = '(' + self.print_tree(tree.children[0]) + ') / (' + self.print_tree(tree.children[1]) + ')'
             else:
                 res = 'rand(' + self.print_tree(tree.children[0]) + ', ' + self.print_tree(tree.children[1]) + ')'
         else:
@@ -329,14 +332,60 @@ class Ghost(Agent):
         self.functional = ['add', 'sub', 'mult', 'div', 'rand']
         self.terminal = ['x', 'y', 'float']
         self.max_depth = depth
+        self.score = 0
 
         self.init_tree()
+
+    def __add__(self, other):
+        return self.score + other
+
+    def __radd__(self, other):
+        return self.score + other
+
+    def __cmp__(self, other):
+        if self.score == other:
+            return 0
+        elif self.score > other:
+            return -1
+        else:
+            return 1
 
     # Randomly choose an action from the legal moves
     def generate_action(self):
         valid = self.valid_actions()
-        act = random.choice(valid)
+        act = self.best_act(valid)
         self.take_action(act)
+
+    # Choose the best action
+    def best_act(self, valid):
+        act = ''
+        best_heur = -float("inf")
+        for i in valid:
+            if i == 'u':
+                try:
+                    act_heur = self.parse_tree(self.tree, self.x, self.y-1)
+                except:
+                    act_heur = -500
+            elif i == 'd':
+                try:
+                    act_heur = self.parse_tree(self.tree, self.x, self.y+1)
+                except:
+                    act_heur = -500
+            elif i == 'r':
+                try:
+                    act_heur = self.parse_tree(self.tree, self.x+1, self.y)
+                except:
+                    act_heur = -500
+            else:
+                try:
+                    act_heur = self.parse_tree(self.tree, self.x-1, self.y)
+                except:
+                    act_heur = -500
+            if act_heur > best_heur:
+                best_heur = act_heur
+                act = i
+
+        return act
 
     # Create a list of legal moves for the ghost, options are u, d, l, r
     # Also does bonus check for wall
@@ -361,6 +410,7 @@ class Ghost(Agent):
         self.board = board
         self.x = self.max_x
         self.y = self.max_y
+        self.score = 0
 
         # Create a GP tree using ramped half and half
     def init_tree(self):
@@ -446,7 +496,7 @@ class Ghost(Agent):
                 res = random.uniform(self.parse_tree(tree.children[0], x, y), self.parse_tree(tree.children[1], x, y))
         else:
             if tree.data == 'x':
-                res = self.pill_dist(x, y)
+                res = self.pac_dist(x, y)
             elif tree.data == 'y':
                 res = self.ghost_dist(x, y)
             else:
@@ -460,18 +510,18 @@ class Ghost(Agent):
 
         if len(tree.children) > 0:
             if tree.data == 'add':
-                res = self.print_tree(tree.children[0]) + ' + ' + self.print_tree(tree.children[1])
+                res = '(' + self.print_tree(tree.children[0]) + ') + (' + self.print_tree(tree.children[1]) + ')'
             elif tree.data == 'sub':
-                res = self.print_tree(tree.children[0]) + ' - ' + self.print_tree(tree.children[1])
+                res = '(' + self.print_tree(tree.children[0]) + ') - (' + self.print_tree(tree.children[1]) + ')'
             elif tree.data == 'mult':
-                res = self.print_tree(tree.children[0]) + ' * ' + self.print_tree(tree.children[1])
+                res = '(' + self.print_tree(tree.children[0]) + ') * (' + self.print_tree(tree.children[1]) + ')'
             elif tree.data == 'div':
-                res = self.print_tree(tree.children[0]) + ' / ' + self.print_tree(tree.children[1])
+                res = '(' + self.print_tree(tree.children[0]) + ') / (' + self.print_tree(tree.children[1]) + ')'
             else:
                 res = 'rand(' + self.print_tree(tree.children[0]) + ', ' + self.print_tree(tree.children[1]) + ')'
         else:
             if tree.data == 'x':
-                res = 'pill_dist'
+                res = 'pac_dist'
             elif tree.data == 'y':
                 res = 'ghost_dist'
             else:
@@ -479,22 +529,16 @@ class Ghost(Agent):
 
         return res
 
-    # The manhattan distance to the nearest pill
-    def pill_dist(self, x, y):
-        mind = float("inf")
-        for i in self.board.pills:
-            temp = abs(x - i[0]) + abs(y - i[1])
-            if temp < mind:
-                mind = temp
-
-        return mind
+    # The manhattan distance to the pacman
+    def pac_dist(self, x, y):
+        return abs(x - self.board.pacman[0]) + abs(y - self.board.pacman[1])
 
     # The manhattan distance to the nearest ghost
     def ghost_dist(self, x, y):
-        mind = float("inf")
+        mind = 1
         for i in self.board.ghosts:
             temp = abs(x - i[0]) + abs(y - i[1])
-            if temp < mind:
+            if mind > temp > 1:
                 mind = temp
 
         return mind
@@ -614,10 +658,6 @@ class Game:
         self.board = BoardState(self.rows, self.cols, self.density, self.wall_density)
         self.game_over = False
 
-        # Create ghosts
-        self.ghosts = list()
-        self.ghosts = [Ghost(self.cols-1, self.rows-1, self.cols-1, self.rows-1, self.board, self.max_depth) for i in range(3)]
-
         # Setup evolutionary parameters
         self.runs = config_params['runs']
         self.fit_evals = config_params['fit_evals']
@@ -629,18 +669,22 @@ class Game:
         self.sol_file = config_params['sol_file']
 
         # Evolutionary parameters
-        self.pop_size = config_params['pop_size']
-        self.offspring = config_params['num_offspring']
+        self.pop_size_pacman = config_params['pop_size_pacman']
+        self.pop_size_ghost = config_params['pop_size_ghost']
+        self.offspring_pacman = config_params['num_offspring_pacman']
+        self.offspring_ghost = config_params['num_offspring_ghost']
         self.mutation = config_params['mutation_rate']
-        self.tourn_size = config_params['tourn_size']
+        self.tourn_size_pacman = config_params['tourn_size_pacman']
+        self.tourn_size_ghost = config_params['tourn_size_ghost']
         self.over_percent = config_params['over_percent']
         self.parent_strat = config_params['parent_strat']
         self.survival_strat = config_params['survival_strat']
-        self.parsimony_coef = config_params['parsimony_coef']
+        self.parsimony_coef_pacman = config_params['parsimony_coef_pacman']
+        self.parsimony_coef_ghost = config_params['parsimony_coef_ghost']
         self.max_depth = config_params['max_tree_depth']
-        self.population = []
+        self.population_pacman = []
+        self.population_ghost = []
         self.evals = 0
-        self.run_best = 0
         self.best_fit = 0
 
     def read_config(self, filename):
@@ -655,12 +699,16 @@ class Game:
         return config_params
 
     def init_pop(self):
-        self.population = []
-        for i in range(self.pop_size):
+        self.population_pacman = []
+        self.population_ghost = []
+        for i in range(self.pop_size_pacman):
             # Create Ms.Pacman
-            self.population.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board, self.max_depth))
+            self.population_pacman.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board, self.max_depth))
+        for i in range(self.pop_size_ghost):
+            # Create identical ghosts
+            self.population_ghost.append(Ghost(self.cols-1, self.rows-1, self.cols-1, self.rows-1, self.board, self.max_depth))
 
-    def fps_parent_selection(self, population, size):
+    def fps_parent_selection(self, population, offspring):
         mating_pool = list()
 
         # Probability distribution of becoming a parent
@@ -668,7 +716,7 @@ class Game:
         prob_parent = [x.score / float(tot_fit) for x in population]
 
         # Randomly pick parents using the generated probability distribution
-        parents_index = numpy.random.choice(a=range(len(population)), size=size, p=prob_parent, replace=True)
+        parents_index = numpy.random.choice(a=range(len(population)), size=offspring, p=prob_parent, replace=True)
         parents_index = parents_index.tolist()
 
         for i in parents_index:
@@ -676,83 +724,113 @@ class Game:
 
         return mating_pool
 
-    def overselection_parent(self):
+    def overselection_parent(self, population, offspring):
         mating_pool = []
-        self.population.sort(key=lambda x: x.score, reverse=True)
-        best_pool = self.population[:int(self.pop_size*self.over_percent)]
-        worst_pool = self.population[int(self.pop_size*(1-self.over_percent)):]
-        for i in range(int(self.offspring*self.over_percent)):
-            mating_pool += self.fps_parent_selection(best_pool, self.offspring*self.over_percent)
-        for i in range(int(self.offspring*(1-self.over_percent))):
-            mating_pool += self.fps_parent_selection(worst_pool, self.offspring*(1-self.over_percent))
+        population.sort(key=lambda x: x.score, reverse=True)
+        best_pool = population[:int(len(population)*self.over_percent)]
+        worst_pool = population[int(len(population)*(1-self.over_percent)):]
+        for i in range(int(offspring*self.over_percent)):
+            mating_pool += self.fps_parent_selection(best_pool, offspring*self.over_percent)
+        for i in range(int(offspring*(1-self.over_percent))):
+            mating_pool += self.fps_parent_selection(worst_pool, offspring*(1-self.over_percent))
         return mating_pool
 
     def evolve(self):
-        new_pop = []
+        new_pop_pacman = []
+        new_pop_ghosts = []
+
+        # Create a mating pool for the pacman and the ghosts
         if self.parent_strat == 'over-selection':
-            parents = self.overselection_parent()
+            parents_pacman = self.overselection_parent(self.population_pacman, self.offspring_pacman)
+            parents_ghosts = self.overselection_parent(self.population_ghost, self.offspring_ghost)
         else:
-            parents = self.fps_parent_selection(self.population, self.offspring)
+            parents_pacman = self.fps_parent_selection(self.population_pacman, self.offspring_pacman)
+            parents_ghosts = self.fps_parent_selection(self.population_ghost, self.offspring_ghost)
+
+        # Evolve pacman
         par_iter = 0
-        while len(new_pop) < self.pop_size:
+        while len(new_pop_pacman) < self.pop_size_pacman:
             if random.random() < self.mutation:
-                new_pop.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board, self.max_depth))
-                new_pop.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board, self.max_depth))
-                new_pop[-2].tree = parents[par_iter].mutate(parents[par_iter].tree)
-                new_pop[-1].tree = parents[par_iter].mutate(parents[par_iter].tree)
+                new_pop_pacman.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board, self.max_depth))
+                new_pop_pacman.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board, self.max_depth))
+                new_pop_pacman[-2].tree = parents_pacman[par_iter].mutate(parents_pacman[par_iter].tree)
+                new_pop_pacman[-1].tree = parents_pacman[par_iter].mutate(parents_pacman[par_iter].tree)
                 par_iter += 2
             else:
-                new_pop.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board, self.max_depth))
-                new_pop.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board, self.max_depth))
-                tree1, tree2 = parents[par_iter].tree.crossover(parents[par_iter].tree, parents[par_iter+1].tree)
-                new_pop[-2].tree = tree1
-                new_pop[-1].tree = tree2
+                new_pop_pacman.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board, self.max_depth))
+                new_pop_pacman.append(Pacman(0, 0, self.cols-1, self.rows-1, self.board, self.max_depth))
+                tree1, tree2 = Tree.crossover(parents_pacman[par_iter].tree, parents_pacman[par_iter+1].tree)
+                new_pop_pacman[-2].tree = tree1
+                new_pop_pacman[-1].tree = tree2
                 par_iter += 2
 
-            current_fit = self.fitness_eval(new_pop[-2])
-            if self.best_fit < current_fit:
-                self.best_fit = current_fit
-                log_file = open(self.log_file, 'w+')
-                log_file.write(self.log)
-                sol_file = open(self.sol_file, 'w+')
-                sol_file.write(new_pop[-2].print_tree(new_pop[-2].tree))
-                log_file.close()
-            self.board_reset()
-            new_pop[-1].board = self.board
-            current_fit = self.fitness_eval(new_pop[-1])
-            if self.best_fit < current_fit:
-                self.best_fit = current_fit
-                log_file = open(self.log_file, 'w+')
-                log_file.write(self.log)
-                sol_file = open(self.sol_file, 'w+')
-                sol_file.write(new_pop[-1].print_tree(new_pop[-1].tree))
-                log_file.close()
-            self.board_reset()
+        # Evolve ghosts
+        par_iter = 0
+        while len(new_pop_ghosts) < self.pop_size_ghost:
+            if random.random() < self.mutation:
+                new_pop_ghosts.append(Ghost(self.cols-1, self.rows-1, self.cols-1, self.rows-1, self.board, self.max_depth))
+                new_pop_ghosts.append(Ghost(self.cols-1, self.rows-1, self.cols-1, self.rows-1, self.board, self.max_depth))
+                new_pop_ghosts[-2].tree = parents_ghosts[par_iter].mutate(parents_ghosts[par_iter].tree)
+                new_pop_ghosts[-1].tree = parents_ghosts[par_iter].mutate(parents_ghosts[par_iter].tree)
+                par_iter += 2
+            else:
+                new_pop_ghosts.append(Ghost(self.cols-1, self.rows-1, self.cols-1, self.rows-1, self.board, self.max_depth))
+                new_pop_ghosts.append(Ghost(self.cols-1, self.rows-1, self.cols-1, self.rows-1, self.board, self.max_depth))
+                tree1, tree2 = Tree.crossover(parents_ghosts[par_iter].tree, parents_ghosts[par_iter+1].tree)
+                new_pop_ghosts[-2].tree = tree1
+                new_pop_ghosts[-1].tree = tree2
+                par_iter += 2
 
-        new_pop = self.survivor_selection(self.population + new_pop)
+        # Combine parents and children into one pool
+        total_pool_pacman = self.population_pacman + new_pop_pacman
+        total_pool_ghost = self.population_ghost + new_pop_ghosts
+        random.shuffle(total_pool_pacman)
+        random.shuffle(total_pool_ghost)
 
-        return new_pop
-
-    def survivor_selection(self, population):
-        new_pop = []
-        if self.survival_strat == 'trunc':
-            new_pop = self.truncation_survival_selection(population)
+        # Evaluate the population and children, number of evaluations is dependent on the different pop sizes
+        if len(total_pool_pacman) > len(total_pool_ghost):
+            for i in range(len(total_pool_pacman)):
+                total_pool_pacman[i].reset(self.board)
+                total_pool_ghost[i % len(total_pool_ghost)].reset(self.board)
+                current_fit = self.fitness_eval(total_pool_pacman[i], total_pool_ghost[i % len(total_pool_ghost)])
+                total_pool_pacman[i].log = self.log
+                total_pool_pacman[i].score = current_fit
+                total_pool_ghost[i % len(total_pool_ghost)].score = -current_fit
+                self.board_reset()
         else:
-            new_pop = self.k_tournament_survivor_selection(population)
+            for i in range(len(total_pool_ghost)):
+                total_pool_pacman[i % len(total_pool_pacman)].reset(self.board)
+                total_pool_ghost[i].reset(self.board)
+                current_fit = self.fitness_eval(total_pool_pacman[i % len(total_pool_pacman)], total_pool_ghost[i])
+                total_pool_pacman[i % len(total_pool_pacman)].log = self.log
+                total_pool_pacman[i % len(total_pool_pacman)].score = current_fit
+                total_pool_ghost[i].score = -current_fit
+                self.board_reset()
+
+        new_pop_pacman = self.survivor_selection(total_pool_pacman, self.pop_size_pacman, self.tourn_size_pacman)
+        new_pop_ghosts = self.survivor_selection(total_pool_ghost, self.pop_size_ghost, self.tourn_size_ghost)
+
+        return new_pop_pacman, new_pop_ghosts
+
+    def survivor_selection(self, population, size, tourn_size):
+        if self.survival_strat == 'trunc':
+            new_pop = self.truncation_survival_selection(population, size)
+        else:
+            new_pop = self.k_tournament_survivor_selection(population, size, tourn_size)
         return new_pop
 
-    def truncation_survival_selection(self, population):
-        population.sort(key=lambda x: x.score, reversed=True)
-        return population[:self.pop_size]
+    def truncation_survival_selection(self, population, size):
+        population.sort(key=lambda x: x.score, reverse=True)
+        return population[:size]
 
-    def k_tournament_survivor_selection(self, population):
+    def k_tournament_survivor_selection(self, population, size, tourn_size):
         new_pop = list()
 
         current_member = 0
-        while current_member < self.pop_size:
+        while current_member < size:
             tournament = list()
             # Pick tourn_size_parents randomly
-            for i in range(0, self.tourn_size):
+            for i in range(0, tourn_size):
                 r = random.choice(population)
                 tournament.append(r)
 
@@ -773,8 +851,8 @@ class Game:
         self.result_header()
 
         for i in range(self.runs):
-            self.run_best = 0
             generation = 1
+            self.evals = 0
 
             # Write the run number to the result log
             result_file = open(self.result_file, 'a')
@@ -782,64 +860,92 @@ class Game:
 
             # Initialize the population
             self.init_pop()
-            for k in range(self.pop_size):
-                self.population[k].board = self.board
-                current_fit = self.fitness_eval(self.population[k])
+            for k in range(self.pop_size_pacman):
+                self.population_pacman[k].board = self.board
+                current_fit = self.fitness_eval(self.population_pacman[k], self.population_ghost[k])
+                self.population_pacman[k].log = self.log
+                self.population_pacman[k].score = current_fit
+                self.population_ghost[k].score = -current_fit
                 self.board_reset()
-                self.evals += self.pop_size
+            self.evals += self.pop_size_pacman
 
             # Run the fitness evals for 1 run
             while self.evals < self.fit_evals:
-                self.population = self.evolve()
-                self.evals += self.offspring
-                current_fit = max(self.population).score
-                self.run_best = current_fit
+                self.population_pacman, self.population_ghost = self.evolve()
+                if self.pop_size_pacman + self.offspring_pacman > self.pop_size_ghost + self.offspring_ghost:
+                    self.evals += self.pop_size_pacman + self.offspring_pacman
+                else:
+                    self.evals += self.pop_size_ghost + self.offspring_ghost
+                current_fit = max(self.population_pacman).score
                 result_file = open(self.result_file, 'a')
-                avg = sum(self.population) / self.pop_size
-                result_file.write(str(generation*self.pop_size) + '\t' + str(avg) + '\t' + str(self.run_best) + '\n')
+                avg = sum(self.population_pacman) / self.pop_size_pacman
+                result_file.write(str(self.evals) + '\t' + str(avg) + '\t' + str(current_fit) + '\n')
                 result_file.close()
                 generation += 1
             result_file = open(self.result_file, 'a')
             result_file.write('\n')
             result_file.close()
 
-            self.evals = 0
+            self.population_pacman.sort(key=lambda x: x.score, reverse=True)
+            self.population_ghost.sort(key=lambda x: x.score, reverse=True)
+            if self.best_fit < self.population_pacman[0].score:
+                self.best_fit = self.population_pacman[0].score
+                log_file = open(self.log_file, 'w+')
+                log_file.write(self.population_pacman[0].log)
+                log_file.close()
+                sol_file = open(self.sol_file, 'w+')
+                sol_file.write("Pacman's evaluation function\n" +
+                               self.population_pacman[0].print_tree(self.population_pacman[0].tree) + '\n\n')
+                sol_file.write("Ghosts' evaluation function\n" +
+                               self.population_ghost[0].print_tree(self.population_ghost[0].tree))
+                sol_file.close()
+            self.board_reset()
 
     def board_reset(self):
         self.board = BoardState(self.rows, self.cols, self.density, self.wall_density)
-        for i in range(len(self.ghosts)):
-            self.ghosts[i].reset(self.board)
         self.game_over = False
         self.time = 2*self.rows*self.cols
         self.log = ''
 
-    def fitness_eval(self, pacman):
-        self.init_log(pacman)
+    def fitness_eval(self, pacman, ghost):
+        # Create three identical ghosts
+        ghost.board = self.board
+        pacman.board = self.board
+        ghost.score = 0
+        pacman.score = 0
+        ghosts = [copy.deepcopy(ghost) for i in range(3)]
+
+        self.init_log(pacman, ghosts)
 
         # Run turns until the game is over
         while not self.game_over and self.time > 0 and len(self.board.pills) > 0:
-            self.turn(pacman)
+            self.turn(pacman, ghosts)
             self.time -= 1
             if len(self.board.pills) == 0:
                 pacman.score += int(self.time/float(self.tot_time) * 100)
-            self.log_turn(pacman)
+            self.log_turn(pacman, ghosts)
+
+        pacman.score = max(pacman.score, 1)
+
+        ghost.score = -pacman.score
+        ghost.score -= self.parsimony_coef_ghost*Tree.find_depth(ghost.tree)
 
         # Parsimony pressure
-        pacman.score -= self.parsimony_coef*Tree.find_depth(pacman.tree)
+        pacman.score -= self.parsimony_coef_pacman*Tree.find_depth(pacman.tree)
         pacman.score = max(pacman.score, 1)
 
         return pacman.score
 
-    def turn(self, pacman):
+    def turn(self, pacman, ghosts):
         pacman.generate_action()
-        for i in self.ghosts:
+        for i in ghosts:
             i.generate_action()
-        self.update_board(pacman)
+        self.update_board(pacman, ghosts)
         # Output board state to terminal
         # self.board.print_board()
         # print
 
-    def update_board(self, pacman):
+    def update_board(self, pacman, ghosts):
         # Move Ms.Pacman
         pac_pos = (pacman.x, pacman.y)
         self.board.board[self.board.pacman[1]][self.board.pacman[0]] = 'e'
@@ -856,14 +962,14 @@ class Game:
             else:
                 self.board.board[i[1]][i[0]] = 'e'
         # Add new ghost positions
-        for i in self.ghosts:
+        for i in ghosts:
             # Check if the ghost found Ms.Pacman
             if (i.x, i.y) == pac_pos:
                 self.end_game()
             self.board.board[i.y][i.x] = 'g'
         # Update ghosts list
-        for i in range(len(self.ghosts)):
-            self.board.ghosts[i] = (self.ghosts[i].x, self.ghosts[i].y)
+        for i in range(len(ghosts)):
+            self.board.ghosts[i] = (ghosts[i].x, ghosts[i].y)
 
     def end_game(self):
         self.game_over = True
@@ -877,23 +983,28 @@ class Game:
             log_file.write('Random seed: ' + str(self.rand_seed) + '\n')
             log_file.write('Result log: ' + self.log_file + '\n')
             log_file.write('Solution file: ' + self.sol_file + '\n')
-            log_file.write('Pacman population size: ' + str(self.pop_size) + '\n')
-            log_file.write('Pacman lambda: ' + str(self.offspring) + '\n')
-            log_file.write('Pacman mutation rate: ' + str(self.mutation) + '\n')
-            log_file.write('Pacman parent selection: ' + self.parent_strat + '\n')
-            log_file.write('Pacman survival strategy: ' + self.survival_strat + '\n')
+            log_file.write('Pacman population size: ' + str(self.pop_size_pacman) + '\n')
+            log_file.write('Ghost population size: ' + str(self.pop_size_ghost) + '\n')
+            log_file.write('Pacman lambda: ' + str(self.offspring_pacman) + '\n')
+            log_file.write('Ghost lambda: ' + str(self.offspring_ghost) + '\n')
+            log_file.write('Mutation rate: ' + str(self.mutation) + '\n')
+            log_file.write('Parent selection: ' + self.parent_strat + '\n')
+            log_file.write('Survival strategy: ' + self.survival_strat + '\n')
             if self.survival_strat == 'k-tourn':
-                log_file.write('Pacman tournament size: ' + str(self.tourn_size) + '\n')
+                log_file.write('Pacman tournament size: ' + str(self.tourn_size_pacman) + '\n')
+                log_file.write('Ghost tournament size: ' + str(self.tourn_size_ghost) + '\n')
+            log_file.write('Parsimony coefficient Pacman: ' + str(self.parsimony_coef_pacman) + '\n')
+            log_file.write('Parsimony coefficient Ghosts: ' + str(self.parsimony_coef_ghost) + '\n')
             log_file.write('Max tree depth: ' + str(self.max_depth) + '\n')
             log_file.write('\n')
             log_file.close()
 
-    def init_log(self, pacman):
+    def init_log(self, pacman, ghosts):
         # Write initial info for log file
         self.log = str(self.cols) + '\n' + str(self.rows) + '\n'
         self.log += 'm ' + str(pacman.x) + ' ' + str(pacman.y) + '\n'
-        for i in range(len(self.ghosts)):
-            self.log += str(i) + ' ' + str(self.ghosts[i].x) + ' ' + str(self.ghosts[i].y) + '\n'
+        for i in range(len(ghosts)):
+            self.log += str(i) + ' ' + str(ghosts[i].x) + ' ' + str(ghosts[i].y) + '\n'
         for i in self.board.pills:
             self.log += 'p ' + str(i[0]) + ' ' + str(i[1]) + '\n'
         for i in self.board.walls:
@@ -901,11 +1012,11 @@ class Game:
 
         self.log += 't ' + str(self.time) + ' ' + str(pacman.score) + '\n'
 
-    def log_turn(self, pacman):
+    def log_turn(self, pacman, ghosts):
         # Write info after a turn
         self.log += 'm ' + str(pacman.x) + ' ' + str(pacman.y) + '\n'
-        for i in range(len(self.ghosts)):
-            self.log += str(i) + ' ' + str(self.ghosts[i].x) + ' ' + str(self.ghosts[i].y) + '\n'
+        for i in range(len(ghosts)):
+            self.log += str(i) + ' ' + str(ghosts[i].x) + ' ' + str(ghosts[i].y) + '\n'
         self.log += 't ' + str(self.time) + ' ' + str(pacman.score) + '\n'
 
 
