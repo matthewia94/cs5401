@@ -1,0 +1,5 @@
+Pacman's evaluation function
+(pill_dist) * (((ghost_dist) - (16.2312625286)) - (72.8936886849))
+
+Ghosts' evaluation function
+(((60.9957142462) - (((pac_dist) - ((pac_dist) / (83.483269584))) * (((((ghost_dist) + (pac_dist)) + (rand(ghost_dist, (ghost_dist) + (74.3043314045)))) / (rand(ghost_dist, (ghost_dist) + (74.3043314045)))) / (rand((pac_dist) * (63.9601745598), (pac_dist) / (ghost_dist)))))) + ((((ghost_dist) / (67.7549523937)) + ((ghost_dist) + (ghost_dist))) * (rand(rand(pac_dist, pac_dist), (81.6084170892) - (95.3704006628))))) + (((rand(pac_dist, (ghost_dist) - (pac_dist))) * ((rand(62.474595035, 70.9119606768)) / ((ghost_dist) + (pac_dist)))) / ((((ghost_dist) + (pac_dist)) / ((ghost_dist) + (74.3043314045))) + (rand((60.9957142462) / ((ghost_dist) + (pac_dist)), (ghost_dist) / (83.483269584)))))
