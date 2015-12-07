@@ -17,8 +17,4 @@ log_file: path to the log file
 result_file: path to the result file
 
 Bonus Info:
-The key wall_density can be added to walls to the file it works the same as pill density but with walls.  If it is not
-found in the file it will be set to 0 and there will be no walls.
-
-The bonus can be run using the configBonus.cfg file (python2 pacman.py configBonus.cfg).  In the source code the added
-code is marked with a comment that has the word bonus in it.
+The bonus is outdated and unused

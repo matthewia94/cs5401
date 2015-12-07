@@ -72,12 +72,15 @@ class Pacman(Agent):
 
         self.log = ''
 
+    # Adds scores
     def __add__(self, other):
         return self.score + other
 
+    # Adds scores
     def __radd__(self, other):
         return self.score + other
 
+    # Compares scores
     def __cmp__(self, other):
         if self.score == other:
             return 0
@@ -314,6 +317,7 @@ class Pacman(Agent):
 
         return mind
 
+    # Randomly select a node and regenerate the subtree at that node
     def mutate(self, tree):
         selected = tree.rand_node()
 
@@ -336,12 +340,15 @@ class Ghost(Agent):
 
         self.init_tree()
 
+    # Add scores
     def __add__(self, other):
         return self.score + other
 
+    # Add scores
     def __radd__(self, other):
         return self.score + other
 
+    # Compare scores
     def __cmp__(self, other):
         if self.score == other:
             return 0
@@ -543,6 +550,7 @@ class Ghost(Agent):
 
         return mind
 
+    # Randomly select a node and regenerate the subtree at that node
     def mutate(self, tree):
         selected = tree.rand_node()
 
@@ -599,6 +607,7 @@ class BoardState:
         self.tot_pills = self.num_pills
         self.board[rows-1][cols-1] = 'g'
 
+    # Output the board
     def print_board(self):
         for i in range(self.rows):
             for j in range(self.cols):
@@ -687,6 +696,7 @@ class Game:
         self.evals = 0
         self.best_fit = 0
 
+    # Read the json config file
     def read_config(self, filename):
         with open(filename) as data_file:
             config_params = json.load(data_file)
@@ -698,6 +708,7 @@ class Game:
 
         return config_params
 
+    # Initialize both populations of ghosts and pacmans
     def init_pop(self):
         self.population_pacman = []
         self.population_ghost = []
@@ -708,6 +719,7 @@ class Game:
             # Create identical ghosts
             self.population_ghost.append(Ghost(self.cols-1, self.rows-1, self.cols-1, self.rows-1, self.board, self.max_depth))
 
+    # Select parents using fitness proportional selection, return a mating pool
     def fps_parent_selection(self, population, offspring):
         mating_pool = list()
 
@@ -724,6 +736,7 @@ class Game:
 
         return mating_pool
 
+    # Select parents using overselection, return a mating pool
     def overselection_parent(self, population, offspring):
         mating_pool = []
         population.sort(key=lambda x: x.score, reverse=True)
@@ -735,6 +748,7 @@ class Game:
             mating_pool += self.fps_parent_selection(worst_pool, offspring*(1-self.over_percent))
         return mating_pool
 
+    # Perform a single evolution including picking a mating pool, generating offspring and selecting survivors
     def evolve(self):
         new_pop_pacman = []
         new_pop_ghosts = []
@@ -812,6 +826,7 @@ class Game:
 
         return new_pop_pacman, new_pop_ghosts
 
+    # Select survivors using either truncation or k tournament
     def survivor_selection(self, population, size, tourn_size):
         if self.survival_strat == 'trunc':
             new_pop = self.truncation_survival_selection(population, size)
@@ -819,10 +834,12 @@ class Game:
             new_pop = self.k_tournament_survivor_selection(population, size, tourn_size)
         return new_pop
 
+    # Select survivors using truncation
     def truncation_survival_selection(self, population, size):
         population.sort(key=lambda x: x.score, reverse=True)
         return population[:size]
 
+    # Select survivors using k-tournament selection
     def k_tournament_survivor_selection(self, population, size, tourn_size):
         new_pop = list()
 
@@ -842,6 +859,7 @@ class Game:
 
         return new_pop
 
+    # Run the entire experiment with multiple runs
     def run_experiment(self):
         # Open and write headers to log file and result file
         result_file = open(self.result_file, 'w+')
@@ -860,14 +878,24 @@ class Game:
 
             # Initialize the population
             self.init_pop()
-            for k in range(self.pop_size_pacman):
-                self.population_pacman[k].board = self.board
-                current_fit = self.fitness_eval(self.population_pacman[k], self.population_ghost[k])
-                self.population_pacman[k].log = self.log
-                self.population_pacman[k].score = current_fit
-                self.population_ghost[k].score = -current_fit
-                self.board_reset()
-            self.evals += self.pop_size_pacman
+            if self.pop_size_pacman > self.pop_size_ghost:
+                for k in range(self.pop_size_pacman):
+                    self.population_pacman[k].board = self.board
+                    current_fit = self.fitness_eval(self.population_pacman[k], self.population_ghost[k % self.pop_size_ghost])
+                    self.population_pacman[k].log = self.log
+                    self.population_pacman[k].score = current_fit
+                    self.population_ghost[k % self.pop_size_ghost].score = -current_fit
+                    self.board_reset()
+                self.evals += self.pop_size_pacman
+            else:
+                for k in range(self.pop_size_ghost):
+                    self.population_pacman[k].board = self.board
+                    current_fit = self.fitness_eval(self.population_pacman[k % self.pop_size_pacman], self.population_ghost[k])
+                    self.population_pacman[k % self.pop_size_pacman].log = self.log
+                    self.population_pacman[k % self.pop_size_pacman].score = current_fit
+                    self.population_ghost[k].score = -current_fit
+                    self.board_reset()
+                self.evals += self.pop_size_ghost
 
             # Run the fitness evals for 1 run
             while self.evals < self.fit_evals:
@@ -901,12 +929,14 @@ class Game:
                 sol_file.close()
             self.board_reset()
 
+    # Reset the board state
     def board_reset(self):
         self.board = BoardState(self.rows, self.cols, self.density, self.wall_density)
         self.game_over = False
         self.time = 2*self.rows*self.cols
         self.log = ''
 
+    # Run a single game to completion and return pacman's score
     def fitness_eval(self, pacman, ghost):
         # Create three identical ghosts
         ghost.board = self.board
@@ -936,6 +966,7 @@ class Game:
 
         return pacman.score
 
+    # Run a single turn for pacman and all the ghosts
     def turn(self, pacman, ghosts):
         pacman.generate_action()
         for i in ghosts:
@@ -945,6 +976,7 @@ class Game:
         # self.board.print_board()
         # print
 
+    # Update the board after a turn
     def update_board(self, pacman, ghosts):
         # Move Ms.Pacman
         pac_pos = (pacman.x, pacman.y)
@@ -971,9 +1003,11 @@ class Game:
         for i in range(len(ghosts)):
             self.board.ghosts[i] = (ghosts[i].x, ghosts[i].y)
 
+    # End the game
     def end_game(self):
         self.game_over = True
 
+    # Create a header for the result file
     def result_header(self):
         with open(self.result_file, 'w+') as log_file:
             log_file.write('Height: ' + str(self.rows) + '\n')
@@ -999,6 +1033,7 @@ class Game:
             log_file.write('\n')
             log_file.close()
 
+    # Create a header for the game log file
     def init_log(self, pacman, ghosts):
         # Write initial info for log file
         self.log = str(self.cols) + '\n' + str(self.rows) + '\n'
@@ -1012,6 +1047,7 @@ class Game:
 
         self.log += 't ' + str(self.time) + ' ' + str(pacman.score) + '\n'
 
+    # Log a single turn in the game log file
     def log_turn(self, pacman, ghosts):
         # Write info after a turn
         self.log += 'm ' + str(pacman.x) + ' ' + str(pacman.y) + '\n'
